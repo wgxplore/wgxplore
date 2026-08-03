@@ -13,7 +13,7 @@
 ![Built with Go](https://img.shields.io/badge/built%20with-Go-00ADD8.svg)
 ![WireGuard](https://img.shields.io/badge/datapath-kernel%20WireGuard-88171a.svg)
 
-<img src="docs/screenshots/console-dark.png" width="880" alt="wgxplore console — a live estate: interface cards on top, five hosts with their WireGuard interfaces and peers in the tree, a peer dossier with its verdict on the right"/>
+<img src="docs/screenshots/console-annotated.png" width="880" alt="wgxplore console, annotated — a live estate: the k8s node mesh on two encrypted planes, template VMs without WireGuard shown honestly, one VM mid-provision down, and a peer dossier with its verdict"/>
 
 </div>
 
