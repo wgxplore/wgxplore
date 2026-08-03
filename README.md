@@ -471,6 +471,29 @@ VMs and per-host containers stop being facts of life. The wires for all
 of it are kernel WireGuard, declared in one file — which is the only part
 this repo provides, and the only part it needs to.
 
+### The same idea, no jargon
+
+Your Minecraft world is just a save file: copy it to a friend's PC, open
+it, and it's your whole world — you didn't rebuild anything. Most servers
+don't work like that; they're Lego builds *glued to the table*. Want one
+somewhere else? Order the pieces again and rebuild by hand.
+
+This stack unglues them, with two tricks. **One:** everything — the
+database, the website, a whole virtual computer — becomes a save file
+(a ZFS dataset) that copies perfectly, and re-copies send only what
+changed since yesterday, like syncing new photos instead of the whole
+camera roll. **Two:** every machine and app gets a phone number that
+follows it around (its wgxplore address) — the number belongs to the
+*thing*, not the place it's plugged in, and the line is encrypted by the
+operating system itself.
+
+Save file + phone number = you can **beam an app between machines**:
+copy the changes, start it there, the number comes with it, and
+everything that talked to it before keeps working like nothing moved. If
+the connection dies halfway, it resumes where it stopped. Apps stop
+being glued to computers — they become save files with phone numbers,
+and those can live anywhere.
+
 ## Install
 
 ```
