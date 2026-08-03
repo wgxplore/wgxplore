@@ -79,11 +79,19 @@ public keys share a private, encrypted wire across any hostile network in
 between — coffee-shop wifi, an ISP, the open internet. The network stops
 being something you're *on* and becomes something you *declare*.
 
-The one thing WireGuard deliberately leaves out is everything above the
-tunnel: distributing keys, keeping N machines' configs consistent, seeing
-your whole estate, noticing a key you didn't add. Its authors left that
-to userspace on purpose. That gap is exactly where wgxplore lives — and
-*only* that gap.
+But notice what WireGuard actually hands you: **a perfect wire** — one
+encrypted link between two keys. A *network* is everything it
+deliberately doesn't ship: deciding who belongs, giving them addresses,
+choosing the shape (mesh? hub and spokes?), keeping every machine's
+config consistent as members come and go, seeing the whole thing at
+once, and noticing a wire you never declared. Its authors left all of
+that to userspace, on purpose.
+
+**wgxplore is the tool you build the networks with.** You declare the
+network — members, addresses, topology — in one file, and wgxplore
+renders it down to perfect wires: plain WireGuard configs, applied with
+plain `wg`/`ip` commands, watched as one estate. WireGuard is the wire.
+wgxplore is the network.
 
 ## Suddenly, the hard stuff is a gesture
 
