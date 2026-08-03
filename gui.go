@@ -82,9 +82,12 @@ func (wgxTheme) Color(n fyne.ThemeColorName, _ fyne.ThemeVariant) color.Color {
 	case theme.ColorNameButton, theme.ColorNameInputBackground:
 		return palPanel
 	case theme.ColorNameHover:
-		return palRaised
+		// Hover/pressed are OVERLAYS Fyne paints on top of the widget —
+		// they must be translucent. An opaque hover here blacked out the
+		// teal Refresh button on mouse-over (seen .119 2026-08-03).
+		return color.NRGBA{0xff, 0xff, 0xff, 0x14}
 	case theme.ColorNamePressed:
-		return palSelect
+		return color.NRGBA{0xff, 0xff, 0xff, 0x28}
 	case theme.ColorNameSelection:
 		return palSelect
 	case theme.ColorNameSeparator, theme.ColorNameInputBorder:
