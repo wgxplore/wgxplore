@@ -21,10 +21,14 @@
 
 `wgxplore` is a fast, keyboard-driven console for the WireGuard you already
 run. Sister project to [zxplore](https://github.com/zxplore/zxplore) — same
-console shape, same primitives ethos, one domain over. Declare networks,
-attach anything to them — hosts, **running containers via the kernel's netns
-move**, VMs — and see the whole estate in one view: every device, every peer,
-handshake-fresh or stale, declared or **not declared by anyone**.
+console shape, same primitives ethos, one domain over — and when the two
+meet, **wgxplore is the road zxplore's data travels**: kernel-encrypted
+replication to overlay addresses that never change, no ssh cipher in the
+path. Each stands alone; together, data and transport, they move whole
+workloads between sites. Declare networks, attach anything to them — hosts,
+**running containers via the kernel's netns move**, VMs — and see the whole
+estate in one view: every device, every peer, handshake-fresh or stale,
+declared or **not declared by anyone**.
 
 Think of it as **a manager for the WireGuard protocol itself**. WireGuard
 ships world-class primitives and — deliberately — no management layer: no
