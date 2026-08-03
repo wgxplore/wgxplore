@@ -46,8 +46,18 @@ everything below stands on.
 
 **WireGuard is a VPN protocol built into the Linux kernel** (mainline
 since 5.6, 2020 — and implemented on every other OS that matters). It
-does one thing: an encrypted tunnel between two machines. What made it
-famous is how it does it:
+does one thing: an encrypted tunnel between two machines.
+
+Chances are you've used it without knowing. **NordVPN's "NordLynx" is
+WireGuard** under a brand name. **Mullvad**, **Proton VPN**, and
+**Surfshark** run on it. **Tailscale** is WireGuard with a SaaS
+coordination service wrapped around it. Your **MikroTik**, **Ubiquiti
+UniFi**, **OPNsense**, **OpenWrt**, or **GL.iNet** router speaks it
+natively, and the stock WireGuard app is on every phone's app store.
+When the industry ships a VPN today, this protocol is what's inside the
+box — the brands differ in what they wrap around it.
+
+What made it famous is how it does it:
 
 - **Identity is a keypair, like ssh.** No certificates, no CAs, no
   usernames. A machine *is* its key; a tunnel is "my private key + your
