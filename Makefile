@@ -16,6 +16,10 @@ GOFLAGS ?= -trimpath
 BUILDNUM_FILE = .buildnum
 STAMP = -ldflags "-X main.buildNum=$$(cat $(BUILDNUM_FILE) 2>/dev/null || echo 0)"
 
+# `bump` is written first for readability, but a bare `make` must build —
+# without this line the default goal was bump and `make` did nothing.
+.DEFAULT_GOAL := build
+
 bump:
 	@n=$$(cat $(BUILDNUM_FILE) 2>/dev/null || echo 0); echo $$((n + 1)) > $(BUILDNUM_FILE)
 
