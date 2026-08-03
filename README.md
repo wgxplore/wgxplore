@@ -494,6 +494,11 @@ The short roadmap only sharpens the one thing:
 
 - **Per-member key custody** — only *public* keys in the declaration; the
   file describes the network without being a keystore.
+- **Fleet-grade verbs** — deterministic gap-filling address allocation for
+  any subnet size, idempotent `net add`, `--json` output, and subnet
+  carving from a declared pool: the primitives a fleet script, OpenTofu
+  run, or appliance can drive in a loop. The *decisions* stay in the
+  caller — wgx allocates from the file, never from a service.
 - **`wgx net adopt`** — bring a live untracked interface under
   declaration, arming the alarm on estates that predate wgxplore.
 - **Key rotation** — staged re-key, both keys valid during the swap.
