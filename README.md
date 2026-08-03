@@ -347,7 +347,12 @@ broadcast, no VXLAN games).
 
 ## Five ways to use it
 
-The same four verbs — declare, render, up, attach — pointed at five
+Ever wondered what it would be like to point at a host — data, workloads,
+backplane network and all — and spray running copies of it across any
+cloud, any site, any bare-metal box, **as if the boundaries between them
+didn't exist**? That's what these verbs unlock when the whole stack is
+present (example 1). The rest are day-one wins that need nothing but this
+tool: the same four verbs — declare, render, up, attach — pointed at five
 different problems.
 
 ### 1 · Two sites, one backplane: replicate live workloads across the internet
