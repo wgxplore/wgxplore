@@ -1,4 +1,4 @@
-module github.com/zxplore/wgxplore
+module github.com/wgxplore/wgxplore
 
 go 1.26.5
 
