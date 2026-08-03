@@ -298,37 +298,38 @@ etcd/NATS replication, golden-image distribution — anything that can
 target an IP can ride the backplane. No operator, no broker, no relay:
 two files and the kernel.
 
-## Roadmap
+## Scope: one thing, done well
 
-In rough order — each keeps the invariant that the tool never grows a
-daemon or a database:
+wgxplore does **declared WireGuard, reconciled**: a file describes the
+network, primitives apply it, the console diffs reality against it. That
+is the whole program. The Unix answer to everything adjacent is
+*composition*, not features:
 
-- **Per-member key custody** — keys generated *on* the member, only public
-  keys in the declaration; the declaration stops being a keystore.
-- **Enrollment** — `wgx enroll`: a single-use, expiring invite that carries
-  the hub's `[Peer]` block out and brings the member's public key back —
-  zero-trust *joining* without a broker service.
-- **Membership TTLs** — declarations with expiry per member; re-render
-  prunes the lapsed. Contractor access that revokes itself, time-boxed
-  debug tunnels.
-- **Key rotation** — `wgx net rotate <member>`: staged re-key with both
-  keys valid during the swap.
-- **`wgx net adopt`** — import a live untracked interface into a
+| you want | compose |
+|---|---|
+| time-boxed access | `cron` + `wgx net render` — prune the member, re-render |
+| enrollment | `scp` the conf out, `wgx net add` the key back over ssh |
+| membership history & review | keep `/etc/wgx` in `git` — the diff *is* the change request |
+| networks up at boot | your init: a oneshot unit that runs `wgx net up` |
+| alerting | `wgx estate \| grep UNDECLARED` in the monitor you already run |
+| moving workloads | `zfs send` / `rsync` / `pg_basebackup` — over the mesh |
+
+What wgxplore will **never** grow, because each one is a second thing: a
+daemon, a database, a broker or identity service, relays or NAT
+traversal, a CNI. The tools that made those choices are listed in the
+boundaries table — they are fine tools solving a different problem.
+
+The short roadmap only sharpens the one thing:
+
+- **Per-member key custody** — only *public* keys in the declaration; the
+  file describes the network without being a keystore.
+- **`wgx net adopt`** — bring a live untracked interface under
   declaration, arming the alarm on estates that predate wgxplore.
+- **Key rotation** — staged re-key, both keys valid during the swap.
 - **Audit log** — every executed mutation appended with timestamp and
   argv, zxplore-style.
-- **Persistence** — render systemd units so declared networks survive
-  reboot without a hand-typed `net up`.
 - **Joined networks** — a gateway member bridging two declared networks,
   policy still nothing but AllowedIPs.
-
-On the "ZTA broker" question — the zero-trust *properties* (identity-bound
-join, least privilege, short-lived access, full audit) are the first four
-roadmap items, delivered as files and one-shot commands. A resident broker
-that authenticates and mints memberships is what Tailscale and NetBird
-already are; the moment wgxplore runs one, every boundary above collapses.
-If an identity-provider-bound join flow is ever warranted, it will be a
-*separate, optional, stateless* signer — the core stays a file.
 
 ## wgxplore on kldload
 
