@@ -26,10 +26,16 @@ attach anything to them — hosts, **running containers via the kernel's netns
 move**, VMs — and see the whole estate in one view: every device, every peer,
 handshake-fresh or stale, declared or **not declared by anyone**.
 
-It's a **primitives** tool, not a management plane: every action maps to a
-plain `wg`/`ip` command, echoed before it runs. No daemon, no SaaS, no agent
-— membership is a file, policy is cryptokey routing, and what wgxplore leaves
-behind is stock WireGuard you could have typed yourself.
+Think of it as **a manager for the WireGuard protocol itself**. WireGuard
+ships world-class primitives and — deliberately — no management layer: no
+key distribution, no config orchestration, no fleet view. Its authors left
+policy to userspace, and most of userspace answered by building products
+*on top* that hide the protocol behind their own control planes. wgxplore
+answers by managing the protocol **in the open**: every action maps to a
+plain `wg`/`ip` command, echoed before it runs; no daemon, no SaaS, no
+agent — membership is a file, policy is cryptokey routing, and what
+wgxplore leaves behind is stock WireGuard you could have typed yourself.
+Others build on WireGuard. **wgxplore's product *is* WireGuard, managed.**
 
 ---
 
