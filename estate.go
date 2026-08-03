@@ -332,13 +332,56 @@ func CollectEstate(hosts []string) []Device {
 	}
 	wg.Wait()
 
-	sort.Slice(all, func(i, j int) bool {
-		if all[i].Host != all[j].Host {
-			return all[i].Host < all[j].Host
+	// Presentation order — one rule for the cards, the tree, and the text
+	// estate: local first, then WireGuard-bearing hosts sorted by their
+	// DISPLAY identity (fqdn — kldload-cp, -w-1, -w-2 … — not the ssh
+	// target string, which scrambled workers into IP order), then
+	// reachable no-WireGuard hosts, unreachable hosts last.
+	class := map[string]int{}
+	label := map[string]string{}
+	for _, d := range all {
+		c := 2 // unreachable
+		if d.Err == "" {
+			if d.Name != "" {
+				c = 0 // has WireGuard
+			} else {
+				c = 1 // reachable, none
+			}
 		}
-		return all[i].Name < all[j].Name
+		if prev, ok := class[d.Host]; !ok || c < prev {
+			class[d.Host] = c
+		}
+		if label[d.Host] == "" {
+			label[d.Host] = HostDisplay(d)
+		}
+	}
+	sort.Slice(all, func(i, j int) bool {
+		a, b := all[i], all[j]
+		if (a.Host == "") != (b.Host == "") {
+			return a.Host == ""
+		}
+		if class[a.Host] != class[b.Host] {
+			return class[a.Host] < class[b.Host]
+		}
+		if label[a.Host] != label[b.Host] {
+			return label[a.Host] < label[b.Host]
+		}
+		if a.Host != b.Host {
+			return a.Host < b.Host
+		}
+		return a.Name < b.Name
 	})
 	return all
+}
+
+// HostDisplay is the name a host is KNOWN by — its fqdn when it reported
+// one, the ssh target otherwise. Sorting and labelling both use this, so
+// the visible name is always the sort key.
+func HostDisplay(d Device) string {
+	if d.HostFQDN != "" {
+		return d.HostFQDN
+	}
+	return hostLabel(d.Host)
 }
 
 // localDump reads this host's WireGuard state, elevating if it has to.
@@ -473,13 +516,13 @@ func PrintEstate() error {
 		}
 		if host != lastHost {
 			id := ""
-			if d.HostFQDN != "" && d.HostFQDN != host {
-				id = "  ·  " + d.HostFQDN
+			if t := hostLabel(d.Host); t != HostDisplay(d) {
+				id = "  ·  " + t
 			}
 			if d.HostAddr != "" {
 				id += "  " + d.HostAddr
 			}
-			fmt.Printf("\n%s%s\n", host, id)
+			fmt.Printf("\n%s%s\n", HostDisplay(d), id)
 			lastHost = host
 		}
 		if d.Err != "" {

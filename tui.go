@@ -68,10 +68,7 @@ func (m *model) buildRows() {
 	m.rows = nil
 	f := strings.ToLower(m.filter)
 	for di, d := range m.devs {
-		hostLabel := d.Host
-		if hostLabel == "" {
-			hostLabel = "local"
-		}
+		hostLabel := HostDisplay(d)
 		devLine := fmt.Sprintf("%s  %s", hostLabel, d.Name)
 		if d.Name == "" && d.Err == "" {
 			devLine = hostLabel + "  (no WireGuard)"

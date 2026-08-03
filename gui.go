@@ -324,32 +324,31 @@ func RunGUI() error {
 			d := devs[r[0]]
 			switch kind[uid] {
 			case nHost:
-				h := d.Host
-				if h == "" {
-					h = "local"
-				}
-				name.Text = h
+				// The host is KNOWN by its name (fqdn); the ssh target is
+				// the detail. Sorting uses the same key, so rows read in
+				// the order they appear to be named.
+				name.Text = HostDisplay(d)
 				name.Color = palTeal
 				name.TextStyle = fyne.TextStyle{Bold: true}
 				switch {
 				case d.Err != "":
 					mark.FillColor = palStale
-					det.Text = "unreachable"
+					det.Text = strings.TrimSpace(hostTarget(d) + " · unreachable")
 					det.Color = palStale
 				case d.Name == "":
 					mark.FillColor = palDim
-					det.Text = strings.TrimSpace(hostIdentity(d, h) + " · no WireGuard")
+					det.Text = strings.TrimSpace(hostTarget(d) + " · no WireGuard")
 					det.Color = palDim
 				default:
 					mark.FillColor = palTeal
-					det.Text = hostIdentity(d, h)
+					det.Text = hostTarget(d)
 					det.Color = palDim
 				}
 			case nIface:
 				name.Text = d.Name
 				name.Color = palFg
 				name.TextStyle = fyne.TextStyle{Bold: true}
-				mark.FillColor = palAmber
+				mark.FillColor = ifaceMark(d)
 				det.Text = fmt.Sprintf("%s · %d peers", ifaceAddr(d), len(d.Peers))
 				det.Color = palDim
 			case nPeer:
@@ -406,7 +405,7 @@ func RunGUI() error {
 			if d.Err != "" {
 				cards.Objects = append(cards.Objects, card(container.NewHBox(
 					dot(palStale),
-					txt(hostLabel(d.Host), palFg, 13, fyne.TextStyle{Bold: true}),
+					txt(HostDisplay(d), palFg, 13, fyne.TextStyle{Bold: true}),
 					txt("unreachable: "+d.Err, palStale, 12, fyne.TextStyle{}),
 				)))
 				continue
@@ -418,7 +417,7 @@ func RunGUI() error {
 			if d.Name == "" {
 				cards.Objects = append(cards.Objects, card(container.NewHBox(
 					dot(palDim),
-					txt(hostLabel(d.Host), palDim, 13, fyne.TextStyle{Bold: true}),
+					txt(HostDisplay(d), palDim, 13, fyne.TextStyle{Bold: true}),
 					txt("no WireGuard interfaces", palDim, 12, fyne.TextStyle{Italic: true}),
 				)))
 				continue
@@ -435,20 +434,16 @@ func RunGUI() error {
 				rx += p.RxBytes
 				tx += p.TxBytes
 			}
-			mark := palAlive
-			if len(d.Peers) > 0 && alive == 0 {
-				mark = palQuiet
-			}
 			name := d.Name
 			if d.Host != "" {
-				name = d.Host + ":" + d.Name
+				name = HostDisplay(d) + ":" + d.Name
 			}
 			aliveCol := palAlive
 			if alive == 0 {
 				aliveCol = palDim
 			}
 			row := container.NewHBox(
-				dot(mark),
+				dot(ifaceMark(d)),
 				txt(name, palFg, 13, fyne.TextStyle{Bold: true}),
 				txt(ifaceAddr(d), palTeal, 12, fyne.TextStyle{Monospace: true}),
 				layout.NewSpacer(),
@@ -728,17 +723,37 @@ func guiPeerDossier(d Device, p Peer) []fyne.CanvasObject {
 	return objs
 }
 
-// hostIdentity renders "fqdn · underlay-ip" for a host row, omitting parts
-// that are unknown or redundant with the alias itself.
-func hostIdentity(d Device, alias string) string {
+// hostTarget renders the "how we reach it" detail for a host row: the ssh
+// target (when it differs from the display name) plus the underlay IP.
+func hostTarget(d Device) string {
 	var parts []string
-	if d.HostFQDN != "" && d.HostFQDN != alias {
-		parts = append(parts, d.HostFQDN)
+	if t := hostLabel(d.Host); t != HostDisplay(d) {
+		parts = append(parts, t)
 	}
 	if d.HostAddr != "" {
 		parts = append(parts, d.HostAddr)
 	}
 	return strings.Join(parts, " · ")
+}
+
+// ifaceMark is THE health colour of an interface, shared by the overview
+// cards and the tree so one interface never wears two colours: dim when it
+// has no peers at all (inert, not healthy), quiet when peers exist but none
+// handshake, alive otherwise.
+func ifaceMark(d Device) color.NRGBA {
+	if len(d.Peers) == 0 {
+		return palDim
+	}
+	alive := 0
+	for _, p := range d.Peers {
+		if p.Health() == "alive" {
+			alive++
+		}
+	}
+	if alive == 0 {
+		return palQuiet
+	}
+	return palAlive
 }
 
 // ifaceAddr prefers the interface's OWN address (what you point things at);
