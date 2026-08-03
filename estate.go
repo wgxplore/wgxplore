@@ -14,6 +14,9 @@ package main
 
 import (
 	"bufio"
+	"bytes"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -147,7 +150,7 @@ func CollectEstate(hosts []string) []Device {
 		var out []byte
 		var err error
 		if host == "" {
-			out, err = exec.Command("wg", "show", "all", "dump").Output()
+			out, err = localDump()
 		} else {
 			out, err = exec.Command("ssh",
 				"-o", "BatchMode=yes",
@@ -179,6 +182,48 @@ func CollectEstate(hosts []string) []Device {
 		return all[i].Name < all[j].Name
 	})
 	return all
+}
+
+// localDump reads this host's WireGuard state, elevating if it has to.
+//
+// `wg show` needs CAP_NET_ADMIN. Unprivileged it does something worse than
+// failing: it prints "Operation not permitted" to stderr, writes NOTHING to
+// stdout, and exits 0 — so a naive caller sees an empty estate and reports
+// the local box as having no interfaces. That is exactly what the desktop
+// launcher hit (fiend 2026-08-03): the tile runs as the operator, the GUI
+// showed nothing, and "localhost unreachable" was the only clue.
+//
+// Order: direct (already root) → sudo -n (passwordless sudoers) → pkexec
+// (polkit; kldload ships org.kldload.wgxplore.policy so wheel members can
+// take this read-only dump without a password prompt on every refresh).
+func localDump() ([]byte, error) {
+	direct, err := exec.Command("wg", "show", "all", "dump").Output()
+	if err == nil && len(bytes.TrimSpace(direct)) > 0 {
+		return direct, nil
+	}
+	if os.Geteuid() == 0 {
+		return direct, err // root and genuinely empty: no interfaces
+	}
+	// Nothing readable and we are not root. If the kernel has no WireGuard
+	// interfaces at all, empty is the truth — say so without prompting.
+	if links, lerr := exec.Command("ip", "-br", "link", "show", "type", "wireguard").Output(); lerr == nil &&
+		len(bytes.TrimSpace(links)) == 0 {
+		return nil, nil
+	}
+	self, _ := os.Executable()
+	for _, try := range [][]string{
+		{"sudo", "-n", "wg", "show", "all", "dump"},
+		{"pkexec", self, "dump"},
+	} {
+		if _, lerr := exec.LookPath(try[0]); lerr != nil {
+			continue
+		}
+		if out, eerr := exec.Command(try[0], try[1:]...).Output(); eerr == nil &&
+			len(bytes.TrimSpace(out)) > 0 {
+			return out, nil
+		}
+	}
+	return nil, errors.New("needs privileges to read WireGuard state — run `sudo wgx`, or install the polkit rule (kldload ships it)")
 }
 
 func shortErr(err error) string {
@@ -240,4 +285,71 @@ func Totals(devs []Device) (hosts, ifaces, peers, alive, undeclared int) {
 		}
 	}
 	return len(seen), ifaces, peers, alive, undeclared
+}
+
+// PrintEstate renders the estate as a text tree — the same host → interface
+// → peer shape the GUI shows, for terminals, scripts and remote checks.
+func PrintEstate() error {
+	devs := CollectEstate(sshHosts())
+	MarkDeclared(devs)
+	h, i, p, alive, undeclared := Totals(devs)
+	fmt.Printf("estate: %d hosts · %d interfaces · %d peers · %d alive", h, i, p, alive)
+	if undeclared > 0 {
+		fmt.Printf("  ⚠ %d UNDECLARED", undeclared)
+	}
+	fmt.Println()
+	lastHost := "\x00"
+	for _, d := range devs {
+		host := d.Host
+		if host == "" {
+			host = "local"
+		}
+		if host != lastHost {
+			fmt.Printf("\n%s\n", host)
+			lastHost = host
+		}
+		if d.Err != "" {
+			fmt.Printf("  └─ unreachable: %s\n", d.Err)
+			continue
+		}
+		fmt.Printf("  ├─ %s  %s  (%d peers)\n", d.Name, ifaceSubnetText(d), len(d.Peers))
+		for j, pr := range d.Peers {
+			br := "│  ├─"
+			if j == len(d.Peers)-1 {
+				br = "│  └─"
+			}
+			mark := map[string]string{"alive": "●", "quiet": "●", "stale": "○", "never": "○"}[pr.Health()]
+			flag := ""
+			if !pr.Declared {
+				flag = "  ⚠ undeclared"
+			}
+			fmt.Printf("  %s %s %-18s %-24s %s%s\n", br, mark,
+				strings.Split(pr.AllowedIPs, ",")[0], orDash(pr.Endpoint), pr.Age(), flag)
+		}
+	}
+	return nil
+}
+
+// ifaceSubnetText mirrors the GUI's subnet summary for the text tree.
+func ifaceSubnetText(d Device) string {
+	seen := map[string]bool{}
+	var nets []string
+	for _, p := range d.Peers {
+		for _, cidr := range strings.Split(p.AllowedIPs, ",") {
+			ip := strings.Split(strings.TrimSpace(cidr), "/")[0]
+			parts := strings.Split(ip, ".")
+			if len(parts) != 4 {
+				continue
+			}
+			n := fmt.Sprintf("%s.%s.%s.0/24", parts[0], parts[1], parts[2])
+			if !seen[n] {
+				seen[n] = true
+				nets = append(nets, n)
+			}
+		}
+	}
+	if len(nets) == 0 {
+		return "—"
+	}
+	return strings.Join(nets, " ")
 }

@@ -29,7 +29,8 @@ func usage() {
 
   wgx                                          open the console (GUI, or TUI)
   wgx tui                                      force the terminal console
-  wgx show                                     peer dossiers, one-shot (root)
+  wgx estate                                   the whole estate as a text tree
+  wgx show                                     peer dossiers, one-shot
   wgx net create <name> [--subnet CIDR] [--topology mesh|hub-spoke] [--port N]
   wgx net add <name> <member> [--endpoint host:port] [--hub]
   wgx net render <name>                        write per-member configs
@@ -58,6 +59,12 @@ func main() {
 		err = RunTUI()
 	case a[0] == "gui":
 		err = RunGUI()
+	case a[0] == "dump":
+		// Privileged helper: pkexec target for the GUI/TUI running as a
+		// normal user. Prints the raw `wg show all dump` and nothing else.
+		err = cmdDump()
+	case a[0] == "estate":
+		err = PrintEstate()
 	case a[0] == "show":
 		err = cmdShow()
 	case a[0] == "net" && len(a) >= 3 && a[1] == "create":

@@ -110,9 +110,9 @@ func genKeypair() (priv, pub string, err error) {
 // ─── wgx show ── dossiers from `wg show all dump` ────────────────────────
 
 func cmdShow() error {
-	out, err := exec.Command("wg", "show", "all", "dump").Output()
+	out, err := localDump() // elevates via sudo -n / pkexec when needed
 	if err != nil {
-		return fmt.Errorf("wg show needs root (try sudo): %w", err)
+		return err
 	}
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 	if len(lines) == 0 || lines[0] == "" {
@@ -370,4 +370,16 @@ func short(s string) string {
 		h = h[:8]
 	}
 	return strings.ToLower(h)
+}
+
+// cmdDump is the privileged read helper invoked via pkexec by an
+// unprivileged console (see localDump). Raw `wg show all dump` on stdout so
+// the parent parses exactly what it would have read itself.
+func cmdDump() error {
+	out, err := exec.Command("wg", "show", "all", "dump").Output()
+	if err != nil {
+		return err
+	}
+	_, err = os.Stdout.Write(out)
+	return err
 }

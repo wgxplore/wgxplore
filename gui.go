@@ -33,80 +33,125 @@ var (
 	colAlarm = color.NRGBA{0xff, 0x5c, 0xd6, 0xff}
 )
 
-type guiRow struct {
-	dev  int
-	peer int // -1 = the interface line
-}
+type nodeKind int
 
-// RunGUI opens the console window.
+const (
+	nHost nodeKind = iota
+	nIface
+	nPeer
+)
+
+// RunGUI opens the console window: an expandable estate tree on the left
+// (host → interface → peer, the way an explorer trees folders), a full
+// dossier on the right.
 func RunGUI() error {
 	a := app.NewWithID("ca.wgxplore")
 	a.SetIcon(theme.ComputerIcon())
 	w := a.NewWindow("wgxplore")
-	w.Resize(fyne.NewSize(1100, 700))
+	w.Resize(fyne.NewSize(1150, 720))
 
 	var (
 		devs    []Device
-		rows    []guiRow
 		hosts   = sshHosts()
 		summary = widget.NewLabel("scanning estate…")
 		dossier = widget.NewRichTextFromMarkdown("")
+		// tree index, rebuilt on every load
+		kids = map[string][]string{}
+		kind = map[string]nodeKind{}
+		ref  = map[string][2]int{} // uid → {device idx, peer idx(-1)}
 	)
 	dossier.Wrapping = fyne.TextWrapWord
 
-	list := widget.NewList(
-		func() int { return len(rows) },
-		func() fyne.CanvasObject { return widget.NewLabel("row") },
-		func(i widget.ListItemID, o fyne.CanvasObject) {
-			if i >= len(rows) {
+	reindex := func() {
+		kids = map[string][]string{}
+		kind = map[string]nodeKind{}
+		ref = map[string][2]int{}
+		hostSeen := map[string]bool{}
+		for di, d := range devs {
+			h := d.Host
+			if h == "" {
+				h = "local"
+			}
+			hu := "h:" + h
+			if !hostSeen[h] {
+				hostSeen[h] = true
+				kids[""] = append(kids[""], hu)
+				kind[hu] = nHost
+				ref[hu] = [2]int{di, -1}
+			}
+			if d.Err != "" {
+				continue
+			}
+			iu := fmt.Sprintf("i:%d", di)
+			kids[hu] = append(kids[hu], iu)
+			kind[iu] = nIface
+			ref[iu] = [2]int{di, -1}
+			for pi := range d.Peers {
+				pu := fmt.Sprintf("p:%d:%d", di, pi)
+				kids[iu] = append(kids[iu], pu)
+				kind[pu] = nPeer
+				ref[pu] = [2]int{di, pi}
+			}
+		}
+	}
+
+	tree := widget.NewTree(
+		func(uid widget.TreeNodeID) []widget.TreeNodeID { return kids[uid] },
+		func(uid widget.TreeNodeID) bool { return len(kids[uid]) > 0 },
+		func(branch bool) fyne.CanvasObject { return widget.NewLabel("node") },
+		func(uid widget.TreeNodeID, branch bool, o fyne.CanvasObject) {
+			lbl := o.(*widget.Label)
+			r, ok := ref[uid]
+			if !ok {
+				lbl.SetText(uid)
 				return
 			}
-			r := rows[i]
-			d := devs[r.dev]
-			lbl := o.(*widget.Label)
-			if r.peer < 0 {
-				host := d.Host
-				if host == "" {
-					host = "local"
+			d := devs[r[0]]
+			switch kind[uid] {
+			case nHost:
+				h := d.Host
+				if h == "" {
+					h = "local"
 				}
 				lbl.TextStyle = fyne.TextStyle{Bold: true}
 				if d.Err != "" {
-					lbl.SetText(fmt.Sprintf("%s — unreachable", host))
+					lbl.SetText("🖧 " + h + "  — unreachable")
 				} else {
-					lbl.SetText(fmt.Sprintf("%s   %s", host, d.Name))
+					lbl.SetText("🖧 " + h)
 				}
-				return
+			case nIface:
+				lbl.TextStyle = fyne.TextStyle{Bold: false}
+				lbl.SetText(fmt.Sprintf("⇄ %s   %s   (%d peers)",
+					d.Name, ifaceSubnet(d), len(d.Peers)))
+			case nPeer:
+				p := d.Peers[r[1]]
+				dot := map[string]string{"alive": "●", "quiet": "●", "stale": "○", "never": "○"}[p.Health()]
+				flag := ""
+				if !p.Declared {
+					flag = "  ⚠"
+				}
+				lbl.TextStyle = fyne.TextStyle{Monospace: true}
+				lbl.SetText(fmt.Sprintf("%s %-18s %-22s %s%s",
+					dot, firstIP(p.AllowedIPs), orDash(p.Endpoint), p.Age(), flag))
 			}
-			p := d.Peers[r.peer]
-			lbl.TextStyle = fyne.TextStyle{Monospace: true}
-			dot := map[string]string{"alive": "●", "quiet": "●", "stale": "○", "never": "○"}[p.Health()]
-			flag := " "
-			if !p.Declared {
-				flag = "!"
-			}
-			key := p.PublicKey
-			if len(key) > 14 {
-				key = key[:14] + "…"
-			}
-			lbl.SetText(fmt.Sprintf("   %s%s %s  %s", dot, flag, key, p.Age()))
 		},
 	)
 
-	rebuild := func() {
-		rows = nil
-		for di, d := range devs {
-			rows = append(rows, guiRow{dev: di, peer: -1})
-			for pi := range d.Peers {
-				rows = append(rows, guiRow{dev: di, peer: pi})
-			}
+	tree.OnSelected = func(uid widget.TreeNodeID) {
+		r, ok := ref[uid]
+		if !ok {
+			return
 		}
-		h, i, p, al, un := Totals(devs)
-		s := fmt.Sprintf("%d hosts · %d interfaces · %d peers · %d alive", h, i, p, al)
-		if un > 0 {
-			s += fmt.Sprintf("   ⚠ %d UNDECLARED", un)
+		d := devs[r[0]]
+		if kind[uid] == nPeer {
+			dossier.ParseMarkdown(guiPeerDossier(d, d.Peers[r[1]]))
+			return
 		}
-		summary.SetText(s)
-		list.Refresh()
+		if kind[uid] == nHost {
+			dossier.ParseMarkdown(guiHostDossier(devs, d.Host))
+			return
+		}
+		dossier.ParseMarkdown(guiDeviceDossier(d))
 	}
 
 	reload := func() {
@@ -116,33 +161,33 @@ func RunGUI() error {
 			MarkDeclared(d)
 			fyne.Do(func() {
 				devs = d
-				rebuild()
+				reindex()
+				h, i, p, al, un := Totals(devs)
+				s := fmt.Sprintf("%d hosts · %d interfaces · %d peers · %d alive", h, i, p, al)
+				if un > 0 {
+					s += fmt.Sprintf("   ⚠ %d UNDECLARED", un)
+				}
+				summary.SetText(s)
+				tree.Refresh()
+				for _, hu := range kids[""] {
+					tree.OpenBranch(hu) // hosts open by default; interfaces expand on click
+				}
 			})
 		}()
 	}
 
-	list.OnSelected = func(i widget.ListItemID) {
-		if i >= len(rows) {
-			return
-		}
-		r := rows[i]
-		d := devs[r.dev]
-		if r.peer < 0 {
-			dossier.ParseMarkdown(guiDeviceDossier(d))
-		} else {
-			dossier.ParseMarkdown(guiPeerDossier(d, d.Peers[r.peer]))
-		}
-	}
-
 	refresh := widget.NewButtonWithIcon("Refresh", theme.ViewRefreshIcon(), reload)
-	top := container.NewBorder(nil, nil, nil, refresh, summary)
-	split := container.NewHSplit(list, container.NewVScroll(dossier))
-	split.Offset = 0.34
+	expand := widget.NewButtonWithIcon("Expand all", theme.MenuDropDownIcon(), func() {
+		for uid := range kids {
+			tree.OpenBranch(uid)
+		}
+	})
+	top := container.NewBorder(nil, nil, nil, container.NewHBox(expand, refresh), summary)
+	split := container.NewHSplit(tree, container.NewVScroll(dossier))
+	split.Offset = 0.46
 	w.SetContent(container.NewBorder(top, nil, nil, nil, split))
 
 	reload()
-	// Live handshake ages: refresh the estate on a slow tick so "alive"
-	// actually means alive while the window sits open.
 	go func() {
 		for range time.Tick(30 * time.Second) {
 			reload()
@@ -151,6 +196,81 @@ func RunGUI() error {
 
 	w.ShowAndRun()
 	return nil
+}
+
+// ifaceSubnet summarises what an interface routes, e.g. "10.250.0.0/24",
+// so a branch reads like a network rather than a device name.
+func ifaceSubnet(d Device) string {
+	seen := map[string]bool{}
+	var nets []string
+	for _, p := range d.Peers {
+		for _, cidr := range strings.Split(p.AllowedIPs, ",") {
+			cidr = strings.TrimSpace(cidr)
+			if cidr == "" {
+				continue
+			}
+			ip := strings.Split(cidr, "/")[0]
+			parts := strings.Split(ip, ".")
+			if len(parts) != 4 {
+				continue
+			}
+			n := fmt.Sprintf("%s.%s.%s.0/24", parts[0], parts[1], parts[2])
+			if !seen[n] {
+				seen[n] = true
+				nets = append(nets, n)
+			}
+		}
+	}
+	if len(nets) == 0 {
+		return "—"
+	}
+	if len(nets) > 2 {
+		return strings.Join(nets[:2], " ") + fmt.Sprintf(" +%d", len(nets)-2)
+	}
+	return strings.Join(nets, " ")
+}
+
+func firstIP(allowed string) string {
+	f := strings.Split(allowed, ",")[0]
+	return strings.TrimSpace(f)
+}
+
+// guiHostDossier rolls every interface on one host into a summary.
+func guiHostDossier(devs []Device, host string) string {
+	label := host
+	if label == "" {
+		label = "local"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "## host %s\n\n", label)
+	var ifaces, peers, alive, undecl int
+	for _, d := range devs {
+		if d.Host != host {
+			continue
+		}
+		if d.Err != "" {
+			fmt.Fprintf(&b, "**UNREACHABLE**\n\n```\n%s\n```\n", d.Err)
+			return b.String()
+		}
+		ifaces++
+		for _, p := range d.Peers {
+			peers++
+			if p.Health() == "alive" {
+				alive++
+			}
+			if !p.Declared {
+				undecl++
+			}
+		}
+	}
+	fmt.Fprintf(&b, "| | |\n|---|---|\n")
+	fmt.Fprintf(&b, "| interfaces | %d |\n", ifaces)
+	fmt.Fprintf(&b, "| peers | %d |\n", peers)
+	fmt.Fprintf(&b, "| handshaking | %d |\n", alive)
+	if undecl > 0 {
+		fmt.Fprintf(&b, "\n**⚠ %d peer(s) not in any declaration.**\n", undecl)
+	}
+	return b.String()
 }
 
 func guiDeviceDossier(d Device) string {
