@@ -289,16 +289,24 @@ func cmdNetUp(name, member string) error {
 	if _, err := os.Stat(conf); err != nil {
 		return fmt.Errorf("%s not rendered — run: wgx net render %s", conf, name)
 	}
-	iface := "wgx-" + name
-	if _, err := run("ip", "link", "add", iface, "type", "wireguard"); err != nil {
+	n, err := loadNet(name)
+	if err != nil {
 		return err
 	}
-	n, _ := loadNet(name)
 	var self *Member
 	for i := range n.Members {
 		if n.Members[i].Name == member {
 			self = &n.Members[i]
 		}
+	}
+	// Guard BEFORE any mutation: a typo'd member name used to nil-deref
+	// below, after the interface was already created.
+	if self == nil {
+		return fmt.Errorf("member %q not in network %q — run: wgx net add %s %s", member, name, name, member)
+	}
+	iface := "wgx-" + name
+	if _, err := run("ip", "link", "add", iface, "type", "wireguard"); err != nil {
+		return err
 	}
 	if _, err := run("wg", "setconf", iface, conf); err != nil {
 		return err
