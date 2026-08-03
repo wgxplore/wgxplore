@@ -27,7 +27,8 @@ const version = "0.1.0"
 func usage() {
 	fmt.Print(`wgxplore ` + version + ` — the WireGuard networks console
 
-  wgx                                          open the console (TUI)
+  wgx                                          open the console (GUI, or TUI)
+  wgx tui                                      force the terminal console
   wgx show                                     peer dossiers, one-shot (root)
   wgx net create <name> [--subnet CIDR] [--topology mesh|hub-spoke] [--port N]
   wgx net add <name> <member> [--endpoint host:port] [--hub]
@@ -45,13 +46,18 @@ func main() {
 	var err error
 	switch {
 	case len(a) == 0:
-		err = RunTUI()
+		// Default: native window in the GUI build, TUI in the static one.
+		if err = RunGUI(); err != nil {
+			err = RunTUI()
+		}
 	case a[0] == "-h", a[0] == "--help":
 		usage()
 	case a[0] == "--version", a[0] == "-V":
 		fmt.Println("wgxplore " + version)
 	case a[0] == "tui":
 		err = RunTUI()
+	case a[0] == "gui":
+		err = RunGUI()
 	case a[0] == "show":
 		err = cmdShow()
 	case a[0] == "net" && len(a) >= 3 && a[1] == "create":
