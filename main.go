@@ -24,8 +24,21 @@ import (
 
 const version = "0.1.0"
 
+// buildNum is stamped by the Makefile (-X main.buildNum=<n>) from the
+// self-incrementing .buildnum counter — same mechanism zxplore uses, so
+// "which build am I looking at" is answerable on a box you did not build.
+var buildNum = ""
+
+// versionFull is version plus the build stamp: "0.1.0 b7".
+func versionFull() string {
+	if buildNum == "" || buildNum == "0" {
+		return version
+	}
+	return version + " b" + buildNum
+}
+
 func usage() {
-	fmt.Print(`wgxplore ` + version + ` — the WireGuard networks console
+	fmt.Print(`wgxplore ` + versionFull() + ` — the WireGuard networks console
 
   wgx                                          open the console (GUI, or TUI)
   wgx tui                                      force the terminal console
@@ -54,7 +67,7 @@ func main() {
 	case a[0] == "-h", a[0] == "--help":
 		usage()
 	case a[0] == "--version", a[0] == "-V":
-		fmt.Println("wgxplore " + version)
+		fmt.Println("wgxplore " + versionFull())
 	case a[0] == "tui":
 		err = RunTUI()
 	case a[0] == "gui":

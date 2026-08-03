@@ -73,30 +73,105 @@ func (p Peer) Age() string {
 	return time.Since(p.Handshake).Round(time.Second).String()
 }
 
-// sshHosts returns Host aliases from ~/.ssh/config — the estate inventory.
-// Wildcards and negations are skipped: they are patterns, not machines.
+// sshHosts returns the machines to scan.
+//
+// Source of truth, in order:
+//  1. an explicit inventory — ~/.config/wgx/hosts or /etc/wgx/hosts, one
+//     ssh target per line (# comments ok). If present, ONLY these are used.
+//  2. otherwise ~/.ssh/config Host aliases, minus the ones that obviously
+//     are not machines.
+//
+// That subtraction matters: an ssh config is full of git remotes. Scanning
+// them produced a tree full of "github.com — unreachable", "gh-brain —
+// unreachable" (onyx, 2026-08-03). A forge is identified by `User git`,
+// by a known forge hostname, or by the gh-* alias convention.
 func sshHosts() []string {
+	if h := inventoryFile(); len(h) > 0 {
+		return h
+	}
 	f, err := os.Open(filepath.Join(os.Getenv("HOME"), ".ssh", "config"))
 	if err != nil {
 		return nil
 	}
 	defer f.Close()
-	var out []string
+
+	forge := map[string]bool{
+		"github.com": true, "gitlab.com": true, "bitbucket.org": true,
+		"codeberg.org": true, "git.sr.ht": true, "ssh.dev.azure.com": true,
+		"git.launchpad.net": true, "gitea.com": true,
+	}
+	type entry struct {
+		aliases  []string
+		hostName string
+		user     string
+	}
+	var entries []entry
+	var cur *entry
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
-		if !strings.HasPrefix(strings.ToLower(line), "host ") {
+		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		for _, h := range strings.Fields(line)[1:] {
-			if strings.ContainsAny(h, "*?!") {
+		fields := strings.Fields(line)
+		switch strings.ToLower(fields[0]) {
+		case "host":
+			entries = append(entries, entry{aliases: fields[1:]})
+			cur = &entries[len(entries)-1]
+		case "hostname":
+			if cur != nil && len(fields) > 1 {
+				cur.hostName = fields[1]
+			}
+		case "user":
+			if cur != nil && len(fields) > 1 {
+				cur.user = fields[1]
+			}
+		}
+	}
+
+	var out []string
+	for _, e := range entries {
+		if e.user == "git" || forge[strings.ToLower(e.hostName)] {
+			continue // a git remote, not a machine
+		}
+		for _, a := range e.aliases {
+			if strings.ContainsAny(a, "*?!") { // pattern, not a host
 				continue
 			}
-			out = append(out, h)
+			if forge[strings.ToLower(a)] || strings.HasPrefix(a, "gh-") {
+				continue
+			}
+			out = append(out, a)
 		}
 	}
 	sort.Strings(out)
 	return out
+}
+
+// inventoryFile reads an explicit host list, if the operator wrote one.
+// One ssh target per line; blank lines and # comments ignored.
+func inventoryFile() []string {
+	for _, p := range []string{
+		filepath.Join(os.Getenv("HOME"), ".config", "wgx", "hosts"),
+		"/etc/wgx/hosts",
+	} {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		var out []string
+		for _, l := range strings.Split(string(b), "\n") {
+			l = strings.TrimSpace(l)
+			if l == "" || strings.HasPrefix(l, "#") {
+				continue
+			}
+			out = append(out, l)
+		}
+		if len(out) > 0 {
+			return out
+		}
+	}
+	return nil
 }
 
 // parseDump folds `wg show all dump` into Devices. Format per line:
@@ -352,4 +427,58 @@ func ifaceSubnetText(d Device) string {
 		return "—"
 	}
 	return strings.Join(nets, " ")
+}
+
+// DevicesOverview renders the top bar: one line per WireGuard interface,
+// the way zxplore's pools bar renders one line per zpool. Same shape, same
+// glance-value — this is the estate's "what have I got and is it healthy".
+//
+//	✓  wg-mgmt          10.250.0.0/24     4 peers ·  4 alive · port 51820 · rx 12.3M / tx 8.1M
+//	⚠  wg-k8s           10.251.0.0/24     4 peers ·  0 alive · port 51821 · 4 undeclared
+func DevicesOverview(devs []Device) string {
+	if len(devs) == 0 {
+		return "  (no WireGuard interfaces found)"
+	}
+	var b strings.Builder
+	for _, d := range devs {
+		if d.Err != "" {
+			fmt.Fprintf(&b, "✗  %-16s %s\n", hostLabel(d.Host), "unreachable: "+d.Err)
+			continue
+		}
+		var alive, undecl int
+		var rx, tx int64
+		for _, p := range d.Peers {
+			if p.Health() == "alive" {
+				alive++
+			}
+			if !p.Declared {
+				undecl++
+			}
+			rx += p.RxBytes
+			tx += p.TxBytes
+		}
+		mark := "✓"
+		if len(d.Peers) > 0 && alive == 0 {
+			mark = "⚠"
+		}
+		name := d.Name
+		if d.Host != "" {
+			name = d.Host + ":" + d.Name
+		}
+		fmt.Fprintf(&b, "%s  %-18s %-17s %2d peers · %2d alive · port %-6s rx %s / tx %s",
+			mark, name, ifaceSubnetText(d), len(d.Peers), alive, orDash(d.ListenPort),
+			human(rx), human(tx))
+		if undecl > 0 {
+			fmt.Fprintf(&b, " · ⚠ %d undeclared", undecl)
+		}
+		b.WriteString("\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func hostLabel(h string) string {
+	if h == "" {
+		return "local"
+	}
+	return h
 }

@@ -48,12 +48,17 @@ func RunGUI() error {
 	a := app.NewWithID("ca.wgxplore")
 	a.SetIcon(theme.ComputerIcon())
 	w := a.NewWindow("wgxplore")
+	_ = versionFull() // build stamp shown in the summary line below
 	w.Resize(fyne.NewSize(1150, 720))
 
 	var (
 		devs    []Device
 		hosts   = sshHosts()
 		summary = widget.NewLabel("scanning estate…")
+		// Devices bar — the analogue of zxplore's zpool overview: one line
+		// per WireGuard interface so the top of the window answers "what
+		// have I got, is it healthy" before you touch the tree.
+		devices = widget.NewLabel("… scanning interfaces")
 		dossier = widget.NewRichTextFromMarkdown("")
 		// tree index, rebuilt on every load
 		kids = map[string][]string{}
@@ -61,6 +66,7 @@ func RunGUI() error {
 		ref  = map[string][2]int{} // uid → {device idx, peer idx(-1)}
 	)
 	dossier.Wrapping = fyne.TextWrapWord
+	devices.TextStyle = fyne.TextStyle{Monospace: true}
 
 	reindex := func() {
 		kids = map[string][]string{}
@@ -163,11 +169,13 @@ func RunGUI() error {
 				devs = d
 				reindex()
 				h, i, p, al, un := Totals(devs)
-				s := fmt.Sprintf("%d hosts · %d interfaces · %d peers · %d alive", h, i, p, al)
+				s := fmt.Sprintf("wgxplore %s   ·   %d hosts · %d interfaces · %d peers · %d alive",
+					versionFull(), h, i, p, al)
 				if un > 0 {
 					s += fmt.Sprintf("   ⚠ %d UNDECLARED", un)
 				}
 				summary.SetText(s)
+				devices.SetText(DevicesOverview(devs))
 				tree.Refresh()
 				for _, hu := range kids[""] {
 					tree.OpenBranch(hu) // hosts open by default; interfaces expand on click
@@ -182,7 +190,8 @@ func RunGUI() error {
 			tree.OpenBranch(uid)
 		}
 	})
-	top := container.NewBorder(nil, nil, nil, container.NewHBox(expand, refresh), summary)
+	head := container.NewBorder(nil, nil, nil, container.NewHBox(expand, refresh), summary)
+	top := container.NewVBox(head, widget.NewSeparator(), devices, widget.NewSeparator())
 	split := container.NewHSplit(tree, container.NewVScroll(dossier))
 	split.Offset = 0.46
 	w.SetContent(container.NewBorder(top, nil, nil, nil, split))

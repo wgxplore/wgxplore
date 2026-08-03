@@ -1,3 +1,5 @@
 wgx
 wgx-gui
+wgx-tui
+.buildnum
 *.log
