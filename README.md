@@ -229,6 +229,11 @@ reachable UDP port runs an estate; two laptops behind hostile NATs are
 Tailscale's problem, not ours. Membership propagates by re-rendering, not
 gossip: deliberate, visible, file-shaped.
 
+**The one-line map:** wgxplore *competes* with the config managers,
+*completes* everything that already speaks WireGuard, and *coexists* with
+the SaaS meshes — run one for your roaming laptop and wgxplore for the
+estate you own, on the same day, without conflict.
+
 ## Where wgxplore sits
 
 Draw the map honestly and the position is narrow and strong:
@@ -434,6 +439,37 @@ installer ships:
 
 kldload is a consumer, not a dependency: wgxplore runs on any Linux with
 kernel WireGuard.
+
+### The line in the sand
+
+On the kldload stack, wgxplore is the network half of a bigger claim —
+that the traditional physics of infrastructure is optional:
+
+**Traditional:** storage is hardware — disks, partitions, filesystems,
+and a userland pile of tools (rsync, tar, dd, LVM, backup agents) to move
+bytes between them. Workloads are *installations*: a VM is a disk chained
+to its hypervisor, a container is layers married to one host. Networks
+are *places* — subnets that mean something only where they are. Moving
+any of it is a project, with downtime.
+
+**The stack:** ZFS makes storage a uniform data lake — the VM disk, the
+container volume, the root filesystem, the database are all **datasets**,
+and four primitives (`snapshot`, `send`, `recv`, `clone`) replace the
+tool pile. Datasets exist wherever they're imported; replication is
+point-and-shoot between any number of hosts
+([zxplore](https://github.com/zxplore/zxplore) makes it two panes and a
+confirm). wgxplore makes the network a declared **property** instead of a
+place: `10.77.0.3` means the same thing at any site, and attaching it to
+a host, VM, or *running container* is one verb.
+
+Put together, a workload stops being an installation and becomes **a
+dataset plus an overlay address** — a connectable image. Replicate it
+anywhere, spin it up, attach it, and it comes online with the same
+identity and the same data; destroy the copy and nothing is lost that a
+snapshot doesn't hold. Storage goes from hardware to objects; "per-disk"
+VMs and per-host containers stop being facts of life. The wires for all
+of it are kernel WireGuard, declared in one file — which is the only part
+this repo provides, and the only part it needs to.
 
 ## Install
 
