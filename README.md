@@ -229,6 +229,107 @@ reachable UDP port runs an estate; two laptops behind hostile NATs are
 Tailscale's problem, not ours. Membership propagates by re-rendering, not
 gossip: deliberate, visible, file-shaped.
 
+## Where wgxplore sits
+
+Draw the map honestly and the position is narrow and strong:
+
+**Built for:** an estate you *own* — machines, VMs, containers, and at
+least one reachable UDP port somewhere. Membership that changes monthly,
+not hourly. Operators who want nothing in the trust chain but their file,
+their kernel, and their ssh.
+
+**Wrong tool for:** two roaming devices with no home base (that is
+genuinely Tailscale's game); thousand-node fleets with hourly churn (run a
+control plane, you'll need one); L2 overlays (WireGuard is L3 — no
+broadcast, no VXLAN games).
+
+**Strengths, concretely:**
+
+- *Nothing to run, nothing to lose.* The "registry" is a file. Lose it and
+  the estate still works — the kernel state is readable back.
+- *Nothing in the datapath but the kernel.* No relay outage, no bandwidth
+  ceiling set by someone else, no third party your packets transit.
+- *Revocation is subtraction.* Remove the member, re-render: the kernel
+  stops routing that key. No CRL, no token expiry to reason about.
+- *The audit story is `git log /etc/wgx`.* Every membership change is a
+  file diff made by a person.
+- *The container attach.* No agent-based tool can do it: the workload gets
+  the mesh without any process alongside it.
+
+**Weaknesses, concretely:**
+
+- *No rendezvous, no network.* If no member has a reachable port, nothing
+  forms — there is no relay to save you.
+- *Convergence is you.* Add a member at midnight and the estate learns at
+  midnight only if you re-render at midnight.
+- *Prototype key custody.* Today the declaration holds private keys —
+  treat `/etc/wgx` like a keystore until per-member custody lands (top of
+  the roadmap).
+
+### Example: two kldload boxes = a workload backplane
+
+Two [kldload](https://kldload.com) systems, anywhere on the internet, one
+declared network between them — and every layer above inherits it:
+
+```
+# on site-a (the reachable one)
+wgx net create backplane --subnet 10.77.0.0/24 --topology hub-spoke
+wgx net add backplane site-a --hub --endpoint a.example.net:51820
+wgx net add backplane site-b
+wgx net add backplane db-a          # containers get memberships too
+wgx net add backplane db-b
+wgx net render backplane && wgx net up backplane site-a
+# on site-b: wgx net up backplane site-b, then attach the live containers
+wgx attach backplane db-a db-a      # site-a
+wgx attach backplane db-b db-b      # site-b
+```
+
+Now two *running* containers on two different sites share a private,
+kernel-encrypted backplane that neither the sites' firewalls nor the
+containers' own isolation can see into — `db-b` can replicate from
+`db-a:5432` at `10.77.0.3` as if they shared a rack. And because kldload
+is a ZFS substrate, the composition goes further with primitives only:
+container volumes are datasets, so **moving a workload between sites is
+`zfs send` over the mesh** — snapshot on site-a, send to site-b at kernel
+speed ([zxplore](https://github.com/zxplore/zxplore) makes it two panes
+and a confirm), start the container there, `wgx attach` it, and it comes
+up at the same overlay address with its data. Node-to-node k8s traffic,
+etcd/NATS replication, golden-image distribution — anything that can
+target an IP can ride the backplane. No operator, no broker, no relay:
+two files and the kernel.
+
+## Roadmap
+
+In rough order — each keeps the invariant that the tool never grows a
+daemon or a database:
+
+- **Per-member key custody** — keys generated *on* the member, only public
+  keys in the declaration; the declaration stops being a keystore.
+- **Enrollment** — `wgx enroll`: a single-use, expiring invite that carries
+  the hub's `[Peer]` block out and brings the member's public key back —
+  zero-trust *joining* without a broker service.
+- **Membership TTLs** — declarations with expiry per member; re-render
+  prunes the lapsed. Contractor access that revokes itself, time-boxed
+  debug tunnels.
+- **Key rotation** — `wgx net rotate <member>`: staged re-key with both
+  keys valid during the swap.
+- **`wgx net adopt`** — import a live untracked interface into a
+  declaration, arming the alarm on estates that predate wgxplore.
+- **Audit log** — every executed mutation appended with timestamp and
+  argv, zxplore-style.
+- **Persistence** — render systemd units so declared networks survive
+  reboot without a hand-typed `net up`.
+- **Joined networks** — a gateway member bridging two declared networks,
+  policy still nothing but AllowedIPs.
+
+On the "ZTA broker" question — the zero-trust *properties* (identity-bound
+join, least privilege, short-lived access, full audit) are the first four
+roadmap items, delivered as files and one-shot commands. A resident broker
+that authenticates and mints memberships is what Tailscale and NetBird
+already are; the moment wgxplore runs one, every boundary above collapses.
+If an identity-provider-bound join flow is ever warranted, it will be a
+*separate, optional, stateless* signer — the core stays a file.
+
 ## wgxplore on kldload
 
 wgxplore is 100% universal — and [kldload](https://kldload.com) is its
