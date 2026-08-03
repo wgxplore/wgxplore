@@ -183,8 +183,7 @@ func RunGUI() error {
 	w.Resize(fyne.NewSize(1180, 740))
 
 	var (
-		devs  []Device
-		hosts = sshHosts()
+		devs []Device
 		// header: brand + build left, summary chips right — rebuilt per load
 		chips   = container.NewHBox()
 		status  = txt("scanning estate…", palDim, 13, fyne.TextStyle{Italic: true})
@@ -409,7 +408,11 @@ func RunGUI() error {
 		status.Text = "scanning estate…"
 		status.Refresh()
 		go func() {
-			d := CollectEstate(hosts)
+			// Re-read the inventory EVERY scan — hosts added to
+			// ~/.config/wgx/hosts (or ssh config) while the console is
+			// open must appear on the next Refresh, not after an app
+			// restart (operator hit exactly that on .119, 2026-08-03).
+			d := CollectEstate(sshHosts())
 			MarkDeclared(d)
 			fyne.Do(func() {
 				devs = d

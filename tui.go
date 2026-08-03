@@ -47,7 +47,6 @@ type model struct {
 	vp       viewport.Model
 	w, h     int
 	loading  bool
-	hosts    []string
 }
 
 type loadedMsg []Device
@@ -56,7 +55,9 @@ func (m model) Init() tea.Cmd { return m.reload() }
 
 func (m model) reload() tea.Cmd {
 	return func() tea.Msg {
-		devs := CollectEstate(m.hosts)
+		// Inventory is re-read per scan so hosts added while the console
+		// is open appear on `r`, not only after a restart.
+		devs := CollectEstate(sshHosts())
 		MarkDeclared(devs)
 		return loadedMsg(devs)
 	}
@@ -327,7 +328,7 @@ func max(a, b int) int {
 
 // RunTUI starts the console.
 func RunTUI() error {
-	m := model{loading: true, hosts: sshHosts()}
+	m := model{loading: true}
 	_, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
 	return err
 }
