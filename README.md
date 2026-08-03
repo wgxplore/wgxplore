@@ -213,12 +213,7 @@ wgx attach <net> <container> <member>
 **GUI:** interface cards on top, estate tree left, dossier right;
 auto-rescans every 30s; follows the OS light/dark theme live.
 
-<div align="center">
-<img src="docs/screenshots/peers-dark.png" width="880" alt="wgxplore — drilled into an interface: every peer with handshake age, and a full dossier for the selected one"/>
-<br/><sub>Drilled in: every peer on the management plane, handshake-fresh, one selected — key, endpoint, allowed-ips, traffic, verdict.</sub>
-</div>
-
-<!-- TUI screenshot slot
+<!-- TUI screenshot slot — the one shot worth adding: same console over ssh
 <img src="docs/screenshots/tui.png" width="880" alt="wgxplore TUI over ssh"/>
 -->
 
