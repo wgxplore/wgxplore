@@ -13,9 +13,8 @@
 ![Built with Go](https://img.shields.io/badge/built%20with-Go-00ADD8.svg)
 ![WireGuard](https://img.shields.io/badge/datapath-kernel%20WireGuard-88171a.svg)
 
-<!-- hero screenshot: GUI full window — estate tree, interface cards, peer dossier
-<img src="docs/screenshots/console-dark.png" width="880" alt="wgxplore console — estate tree, interface cards, peer dossier"/>
--->
+<img src="docs/screenshots/console-dark.png" width="880" alt="wgxplore console — a live estate: interface cards on top, five hosts with their WireGuard interfaces and peers in the tree, a peer dossier with its verdict on the right"/>
+<br/><sub>A real estate, live: the k8s backplane mesh across five hosts — plus two clones with no WireGuard yet, and one that's down. Nothing hidden, nothing invented.</sub>
 
 </div>
 
@@ -193,8 +192,13 @@ wgx attach <net> <container> <member>
 **GUI:** interface cards on top, estate tree left, dossier right;
 auto-rescans every 30s; follows the OS light/dark theme live.
 
-<!-- screenshots: TUI + GUI side by side
-<img src="docs/screenshots/tui.png" width="46%" alt="wgxplore TUI"/> <img src="docs/screenshots/gui-peer.png" width="46%" alt="wgxplore GUI — peer dossier"/>
+<div align="center">
+<img src="docs/screenshots/peers-dark.png" width="880" alt="wgxplore — drilled into an interface: every peer with handshake age, and a full dossier for the selected one"/>
+<br/><sub>Drilled in: every peer on the management plane, handshake-fresh, one selected — key, endpoint, allowed-ips, traffic, verdict.</sub>
+</div>
+
+<!-- TUI screenshot slot
+<img src="docs/screenshots/tui.png" width="880" alt="wgxplore TUI over ssh"/>
 -->
 
 ## Security model
