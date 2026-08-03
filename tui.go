@@ -183,6 +183,9 @@ func (m model) View() string {
 			if len(key) > 12 {
 				key = key[:12] + "…"
 			}
+			if p.Label != "" {
+				key = p.Label // declared peers show as network/member
+			}
 			flag := " "
 			if !p.Declared && d.Managed {
 				flag = stAlarm.Render("!")
@@ -228,6 +231,15 @@ func (m model) deviceDossier(d Device) string {
 		return b.String()
 	}
 	fmt.Fprintf(&b, "  %-12s %s\n", "host", host)
+	if d.HostFQDN != "" {
+		fmt.Fprintf(&b, "  %-12s %s\n", "fqdn", d.HostFQDN)
+	}
+	if d.HostAddr != "" {
+		fmt.Fprintf(&b, "  %-12s %s\n", "reached at", d.HostAddr)
+	}
+	if d.Addr != "" {
+		fmt.Fprintf(&b, "  %-12s %s\n", "address", d.Addr)
+	}
 	fmt.Fprintf(&b, "  %-12s %s\n", "public key", d.PublicKey)
 	fmt.Fprintf(&b, "  %-12s %s\n", "listen port", orDash(d.ListenPort))
 	fmt.Fprintf(&b, "  %-12s %d\n\n", "peers", len(d.Peers))
@@ -254,6 +266,9 @@ func (m model) deviceDossier(d Device) string {
 func (m model) peerDossier(d Device, p Peer) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s\n\n", stTitle.Render("peer"))
+	if p.Label != "" {
+		fmt.Fprintf(&b, "  %-12s %s\n", "declared as", p.Label)
+	}
 	fmt.Fprintf(&b, "  %-12s %s\n", "public key", p.PublicKey)
 	fmt.Fprintf(&b, "  %-12s %s\n", "on", d.Name)
 	fmt.Fprintf(&b, "  %-12s %s\n", "endpoint", orDash(p.Endpoint))

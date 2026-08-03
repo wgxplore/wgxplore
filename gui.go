@@ -266,14 +266,15 @@ func RunGUI() error {
 					det.Color = palStale
 				} else {
 					mark.FillColor = palTeal
-					det.Text = ""
+					det.Text = hostIdentity(d, h)
+					det.Color = palDim
 				}
 			case nIface:
 				name.Text = d.Name
 				name.Color = palFg
 				name.TextStyle = fyne.TextStyle{Bold: true}
 				mark.FillColor = palAmber
-				det.Text = fmt.Sprintf("%s · %d peers", ifaceSubnet(d), len(d.Peers))
+				det.Text = fmt.Sprintf("%s · %d peers", ifaceAddr(d), len(d.Peers))
 				det.Color = palDim
 			case nPeer:
 				p := d.Peers[r[1]]
@@ -281,6 +282,9 @@ func RunGUI() error {
 				key := p.PublicKey
 				if len(key) > 12 {
 					key = key[:12] + "…"
+				}
+				if p.Label != "" {
+					key = p.Label // declared peers show as network/member
 				}
 				name.Text = key
 				name.Color = palFg
@@ -358,7 +362,7 @@ func RunGUI() error {
 			row := container.NewHBox(
 				dot(mark),
 				txt(name, palFg, 13, fyne.TextStyle{Bold: true}),
-				txt(ifaceSubnet(d), palTeal, 12, fyne.TextStyle{Monospace: true}),
+				txt(ifaceAddr(d), palTeal, 12, fyne.TextStyle{Monospace: true}),
 				layout.NewSpacer(),
 				txt(fmt.Sprintf("%d peers", len(d.Peers)), palDim, 12, fyne.TextStyle{}),
 				txt(fmt.Sprintf("%d alive", alive), aliveCol, 12, fyne.TextStyle{Bold: true}),
@@ -496,13 +500,24 @@ func guiHostDossier(devs []Device, host string) []fyne.CanvasObject {
 			}
 		}
 	}
+	rows := [][2]string{}
+	for _, d := range devs {
+		if d.Host == host && d.HostFQDN != "" {
+			rows = append(rows, [2]string{"fqdn", d.HostFQDN})
+			if d.HostAddr != "" {
+				rows = append(rows, [2]string{"reached at", d.HostAddr})
+			}
+			break
+		}
+	}
+	rows = append(rows,
+		[2]string{"interfaces", fmt.Sprint(ifaces)},
+		[2]string{"peers", fmt.Sprint(peers)},
+		[2]string{"handshaking", fmt.Sprint(alive)},
+	)
 	objs := []fyne.CanvasObject{
 		txt("host "+hostLabel(host), palTeal, 16, fyne.TextStyle{Bold: true}),
-		kv(
-			[2]string{"interfaces", fmt.Sprint(ifaces)},
-			[2]string{"peers", fmt.Sprint(peers)},
-			[2]string{"handshaking", fmt.Sprint(alive)},
-		),
+		kv(rows...),
 	}
 	if undecl > 0 {
 		objs = append(objs, verdict(palAlarm,
@@ -532,6 +547,7 @@ func guiDeviceDossier(d Device) []fyne.CanvasObject {
 		txt("interface "+d.Name, palTeal, 16, fyne.TextStyle{Bold: true}),
 		kv(
 			[2]string{"host", hostLabel(d.Host)},
+			[2]string{"address", orDash(d.Addr)},
 			[2]string{"public key", d.PublicKey},
 			[2]string{"listen port", orDash(d.ListenPort)},
 			[2]string{"peers", fmt.Sprintf("%d (%d handshaking)", len(d.Peers), alive)},
@@ -561,14 +577,20 @@ func guiPeerDossier(d Device, p Peer) []fyne.CanvasObject {
 			txt("peer", palTeal, 16, fyne.TextStyle{Bold: true}),
 			txt(h+" · "+p.Age(), healthColor(h), 13, fyne.TextStyle{Bold: true}),
 		),
-		kv(
-			[2]string{"public key", p.PublicKey},
-			[2]string{"on", hostLabel(d.Host) + " · " + d.Name},
-			[2]string{"endpoint", orDash(p.Endpoint)},
-			[2]string{"allowed-ips", p.AllowedIPs},
-			[2]string{"traffic", "rx " + human(p.RxBytes) + " · tx " + human(p.TxBytes)},
-			[2]string{"keepalive", orDash(p.Keepalive)},
-		),
+		kv(func() [][2]string {
+			rows := [][2]string{}
+			if p.Label != "" {
+				rows = append(rows, [2]string{"declared as", p.Label})
+			}
+			return append(rows,
+				[2]string{"public key", p.PublicKey},
+				[2]string{"on", hostLabel(d.Host) + " · " + d.Name},
+				[2]string{"endpoint", orDash(p.Endpoint)},
+				[2]string{"allowed-ips", p.AllowedIPs},
+				[2]string{"traffic", "rx " + human(p.RxBytes) + " · tx " + human(p.TxBytes)},
+				[2]string{"keepalive", orDash(p.Keepalive)},
+			)
+		}()...),
 	}
 	switch {
 	case p.Declared:
@@ -585,6 +607,28 @@ func guiPeerDossier(d Device, p Peer) []fyne.CanvasObject {
 			"means someone with root on "+d.Name+" added it. Investigate."))
 	}
 	return objs
+}
+
+// hostIdentity renders "fqdn · underlay-ip" for a host row, omitting parts
+// that are unknown or redundant with the alias itself.
+func hostIdentity(d Device, alias string) string {
+	var parts []string
+	if d.HostFQDN != "" && d.HostFQDN != alias {
+		parts = append(parts, d.HostFQDN)
+	}
+	if d.HostAddr != "" {
+		parts = append(parts, d.HostAddr)
+	}
+	return strings.Join(parts, " · ")
+}
+
+// ifaceAddr prefers the interface's OWN address (what you point things at);
+// hosts we could not read addresses from fall back to the subnet guess.
+func ifaceAddr(d Device) string {
+	if d.Addr != "" {
+		return d.Addr
+	}
+	return ifaceSubnet(d)
 }
 
 // ifaceSubnet summarises what an interface routes, e.g. "10.250.0.0/24",

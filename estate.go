@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -36,13 +37,17 @@ type Peer struct {
 	RxBytes    int64
 	TxBytes    int64
 	Keepalive  string
-	Declared   bool // matched a member in a declaration
+	Declared   bool   // matched a member in a declaration
+	Label      string // "network/member" when declared — show names, not keys
 }
 
 // Device is one WireGuard interface on one host.
 type Device struct {
 	Host       string // "" = local
+	HostFQDN   string // what the host calls itself (hostname -f)
+	HostAddr   string // underlay IP the estate reaches it at (DNS of ssh HostName)
 	Name       string // wg-mgmt, wg-k8s, wgx-lab …
+	Addr       string // the interface's OWN overlay address(es), from `ip -br addr`
 	PublicKey  string
 	ListenPort string
 	Peers      []Peer
@@ -86,6 +91,12 @@ func (p Peer) Age() string {
 // them produced a tree full of "github.com — unreachable", "gh-brain —
 // unreachable" (onyx, 2026-08-03). A forge is identified by `User git`,
 // by a known forge hostname, or by the gh-* alias convention.
+// sshHostName maps an inventory alias to the HostName its ssh config dials,
+// so the estate can show the underlay address the console actually reaches.
+// Filled by sshHosts as a side effect; aliases without a HostName map to
+// themselves.
+var sshHostName = map[string]string{}
+
 func sshHosts() []string {
 	if h := inventoryFile(); len(h) > 0 {
 		return h
@@ -143,6 +154,9 @@ func sshHosts() []string {
 				continue
 			}
 			out = append(out, a)
+			if e.hostName != "" {
+				sshHostName[a] = e.hostName
+			}
 		}
 	}
 	sort.Strings(out)
@@ -211,9 +225,39 @@ func parseDump(host, dump string) []Device {
 	return devs
 }
 
+// sepMark separates the three sections of the combined remote command —
+// dump, addresses, fqdn — so one ssh round-trip gathers all identity data.
+const sepMark = "==WGX-SEP=="
+
+// parseAddrs folds `ip -br addr` into iface → its own address(es),
+// link-local noise dropped. Empty on hosts without iproute2 (BSD) — the
+// UIs fall back to inferring subnets from peers' allowed-ips.
+func parseAddrs(out string) map[string]string {
+	m := map[string]string{}
+	for _, l := range strings.Split(out, "\n") {
+		f := strings.Fields(l)
+		if len(f) < 3 {
+			continue
+		}
+		var addrs []string
+		for _, a := range f[2:] {
+			if strings.HasPrefix(a, "fe80") {
+				continue
+			}
+			addrs = append(addrs, a)
+		}
+		if len(addrs) > 0 {
+			m[strings.Split(f[0], "@")[0]] = strings.Join(addrs, " ")
+		}
+	}
+	return m
+}
+
 // CollectEstate gathers devices from the local host and every ssh alias, in
 // parallel. Unreachable hosts become a Device carrying Err rather than
 // vanishing — "the box is down" is inventory information, not an error.
+// Alongside each dump it collects the host's own identity (fqdn, interface
+// addresses) and resolves the underlay address the ssh config dials.
 func CollectEstate(hosts []string) []Device {
 	var (
 		mu  sync.Mutex
@@ -223,24 +267,53 @@ func CollectEstate(hosts []string) []Device {
 
 	collect := func(host string) {
 		defer wg.Done()
-		var out []byte
+		var dump, addrOut, fqdn, haddr string
 		var err error
 		if host == "" {
+			var out []byte
 			out, err = localDump()
+			dump = string(out)
+			if a, e := exec.Command("ip", "-br", "addr").Output(); e == nil {
+				addrOut = string(a)
+			}
+			if f, e := exec.Command("hostname", "-f").Output(); e == nil {
+				fqdn = strings.TrimSpace(string(f))
+			}
 		} else {
+			var out []byte
 			out, err = exec.Command("ssh",
 				"-o", "BatchMode=yes",
 				"-o", "StrictHostKeyChecking=accept-new",
 				"-o", "ConnectTimeout=6",
-				host, "wg show all dump").Output()
+				host,
+				"wg show all dump 2>/dev/null; echo "+sepMark+
+					"; ip -br addr 2>/dev/null; echo "+sepMark+
+					"; hostname -f 2>/dev/null || hostname").Output()
+			if parts := strings.SplitN(string(out), sepMark+"\n", 3); len(parts) == 3 {
+				dump, addrOut, fqdn = parts[0], parts[1], strings.TrimSpace(parts[2])
+			}
+			target := sshHostName[host]
+			if target == "" {
+				target = host
+			}
+			if ips, e := net.LookupHost(target); e == nil && len(ips) > 0 {
+				haddr = ips[0]
+			}
 		}
 		mu.Lock()
 		defer mu.Unlock()
 		if err != nil {
-			all = append(all, Device{Host: host, Name: "—", Err: shortErr(err)})
+			all = append(all, Device{Host: host, HostAddr: haddr, Name: "—", Err: shortErr(err)})
 			return
 		}
-		all = append(all, parseDump(host, string(out))...)
+		devs := parseDump(host, dump)
+		addrs := parseAddrs(addrOut)
+		for i := range devs {
+			devs[i].Addr = addrs[devs[i].Name]
+			devs[i].HostFQDN = fqdn
+			devs[i].HostAddr = haddr
+		}
+		all = append(all, devs...)
 	}
 
 	wg.Add(1)
@@ -341,8 +414,9 @@ func MarkDeclared(devs []Device) map[string]string {
 			devs[i].Managed = true
 		}
 		for j := range devs[i].Peers {
-			if _, ok := known[devs[i].Peers[j].PublicKey]; ok {
+			if l, ok := known[devs[i].Peers[j].PublicKey]; ok {
 				devs[i].Peers[j].Declared = true
+				devs[i].Peers[j].Label = l
 			}
 		}
 	}
@@ -390,14 +464,21 @@ func PrintEstate() error {
 			host = "local"
 		}
 		if host != lastHost {
-			fmt.Printf("\n%s\n", host)
+			id := ""
+			if d.HostFQDN != "" && d.HostFQDN != host {
+				id = "  ·  " + d.HostFQDN
+			}
+			if d.HostAddr != "" {
+				id += "  " + d.HostAddr
+			}
+			fmt.Printf("\n%s%s\n", host, id)
 			lastHost = host
 		}
 		if d.Err != "" {
 			fmt.Printf("  └─ unreachable: %s\n", d.Err)
 			continue
 		}
-		fmt.Printf("  ├─ %s  %s  (%d peers)\n", d.Name, ifaceSubnetText(d), len(d.Peers))
+		fmt.Printf("  ├─ %s  %s  (%d peers)\n", d.Name, ifaceAddrText(d), len(d.Peers))
 		for j, pr := range d.Peers {
 			br := "│  ├─"
 			if j == len(d.Peers)-1 {
@@ -408,11 +489,25 @@ func PrintEstate() error {
 			if d.Managed && !pr.Declared {
 				flag = "  ⚠ undeclared"
 			}
+			who := strings.Split(pr.AllowedIPs, ",")[0]
+			if pr.Label != "" {
+				who = pr.Label
+			}
 			fmt.Printf("  %s %s %-18s %-24s %s%s\n", br, mark,
-				strings.Split(pr.AllowedIPs, ",")[0], orDash(pr.Endpoint), pr.Age(), flag)
+				who, orDash(pr.Endpoint), pr.Age(), flag)
 		}
 	}
 	return nil
+}
+
+// ifaceAddrText prefers the interface's OWN address (what you point things
+// at); only interfaces we could not read addresses for fall back to the
+// subnet guess inferred from peers' allowed-ips.
+func ifaceAddrText(d Device) string {
+	if d.Addr != "" {
+		return d.Addr
+	}
+	return ifaceSubnetText(d)
 }
 
 // ifaceSubnetText mirrors the GUI's subnet summary for the text tree.
@@ -476,7 +571,7 @@ func DevicesOverview(devs []Device) string {
 			name = d.Host + ":" + d.Name
 		}
 		fmt.Fprintf(&b, "%s  %-18s %-17s %2d peers · %2d alive · port %-6s rx %s / tx %s",
-			mark, name, ifaceSubnetText(d), len(d.Peers), alive, orDash(d.ListenPort),
+			mark, name, ifaceAddrText(d), len(d.Peers), alive, orDash(d.ListenPort),
 			human(rx), human(tx))
 		if undecl > 0 {
 			fmt.Fprintf(&b, " · ⚠ %d undeclared", undecl)
