@@ -538,11 +538,17 @@ func RunGUI() error {
 		lastVariant = v
 		fyne.Do(func() {
 			setPalette(v)
+			// Repaint from the data already in memory — NO rescan. The
+			// first cut called reload() here, so the cards kept the old
+			// palette for the 2-3s the ssh sweep took (seen .119): colour
+			// changes must be instant, data refreshes have their own tick.
+			rebuildChips()
+			rebuildCards()
+			tree.Refresh()
 			setDossier(
 				txt("estate", palTeal, 16, fyne.TextStyle{Bold: true}),
 				txt("select a host, interface or peer", palDim, 13, fyne.TextStyle{Italic: true}),
 			)
-			reload() // rebuilds chips + cards + tree rows in the new palette
 		})
 	})
 
