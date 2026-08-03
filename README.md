@@ -4,7 +4,7 @@
 
 # wgxplore
 
-**A direct interface to your WireGuard estate — not a control plane.**
+**The management layer WireGuard never shipped — in the open, not on top.**
 
 *Every device, every peer, every network — declared in a file, enforced by the kernel, visible at a keypress.*
 
