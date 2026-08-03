@@ -47,6 +47,7 @@ type Device struct {
 	ListenPort string
 	Peers      []Peer
 	Err        string // populated when the host could not be reached
+	Managed    bool   // this interface's own key appears in a declaration
 }
 
 // Health buckets a peer by handshake age — the "is this tunnel alive?"
@@ -310,8 +311,13 @@ func shortErr(err error) string {
 }
 
 // MarkDeclared flags peers whose public key appears in any declaration under
-// /etc/wgx. Everything left unflagged in a network we manage is a peer nobody
-// declared — the row worth waking up for.
+// /etc/wgx, and flags devices as Managed when their OWN key does. The alarm
+// only arms on managed interfaces: an adopted estate with no declarations at
+// all must read as neutral "untracked", not as a wall of false alarms — the
+// first run on onyx (2026-08-03) painted every pre-existing wg-mgmt/wg-k8s
+// peer alarm-pink and buried the signal the alarm exists for. Everything
+// left unflagged on an interface we DO manage is a peer nobody declared —
+// the row worth waking up for.
 func MarkDeclared(devs []Device) map[string]string {
 	known := map[string]string{} // pubkey → "network/member"
 	entries, err := os.ReadDir(netDir)
@@ -331,6 +337,9 @@ func MarkDeclared(devs []Device) map[string]string {
 		}
 	}
 	for i := range devs {
+		if _, ok := known[devs[i].PublicKey]; ok {
+			devs[i].Managed = true
+		}
 		for j := range devs[i].Peers {
 			if _, ok := known[devs[i].Peers[j].PublicKey]; ok {
 				devs[i].Peers[j].Declared = true
@@ -354,7 +363,8 @@ func Totals(devs []Device) (hosts, ifaces, peers, alive, undeclared int) {
 			if p.Health() == "alive" {
 				alive++
 			}
-			if !p.Declared {
+			// The alarm only arms on managed interfaces (see MarkDeclared).
+			if d.Managed && !p.Declared {
 				undeclared++
 			}
 		}
@@ -395,7 +405,7 @@ func PrintEstate() error {
 			}
 			mark := map[string]string{"alive": "●", "quiet": "●", "stale": "○", "never": "○"}[pr.Health()]
 			flag := ""
-			if !pr.Declared {
+			if d.Managed && !pr.Declared {
 				flag = "  ⚠ undeclared"
 			}
 			fmt.Printf("  %s %s %-18s %-24s %s%s\n", br, mark,
@@ -451,7 +461,7 @@ func DevicesOverview(devs []Device) string {
 			if p.Health() == "alive" {
 				alive++
 			}
-			if !p.Declared {
+			if d.Managed && !p.Declared {
 				undecl++
 			}
 			rx += p.RxBytes

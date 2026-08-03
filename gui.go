@@ -287,7 +287,7 @@ func RunGUI() error {
 				name.TextStyle = fyne.TextStyle{Monospace: true}
 				det.Text = firstIP(p.AllowedIPs) + " · " + p.Age()
 				det.Color = palDim
-				if !p.Declared {
+				if !p.Declared && d.Managed {
 					badge.Text = "⚠"
 				}
 			}
@@ -337,7 +337,7 @@ func RunGUI() error {
 				if p.Health() == "alive" {
 					alive++
 				}
-				if !p.Declared {
+				if d.Managed && !p.Declared {
 					undecl++
 				}
 				rx += p.RxBytes
@@ -524,7 +524,7 @@ func guiDeviceDossier(d Device) []fyne.CanvasObject {
 		if p.Health() == "alive" {
 			alive++
 		}
-		if !p.Declared {
+		if d.Managed && !p.Declared {
 			undeclared++
 		}
 	}
@@ -538,11 +538,16 @@ func guiDeviceDossier(d Device) []fyne.CanvasObject {
 			[2]string{"routes", ifaceSubnet(d)},
 		),
 	}
-	if undeclared > 0 {
+	switch {
+	case !d.Managed:
+		objs = append(objs, verdict(palDim,
+			"untracked — not managed by any wgxplore declaration",
+			"Peers here are shown for inventory, not judged."))
+	case undeclared > 0:
 		objs = append(objs, verdict(palAlarm,
 			fmt.Sprintf("⚠ %d peer(s) not in any declaration", undeclared),
 			"Someone with root added them. Investigate."))
-	} else if len(d.Peers) > 0 {
+	case len(d.Peers) > 0:
 		objs = append(objs, verdict(palAlive, "✓ all peers declared"))
 	}
 	return objs
@@ -565,10 +570,15 @@ func guiPeerDossier(d Device, p Peer) []fyne.CanvasObject {
 			[2]string{"keepalive", orDash(p.Keepalive)},
 		),
 	}
-	if p.Declared {
+	switch {
+	case p.Declared:
 		objs = append(objs, verdict(palAlive,
 			"✓ declared — this peer is in a wgxplore network"))
-	} else {
+	case !d.Managed:
+		objs = append(objs, verdict(palDim,
+			"untracked — "+d.Name+" is not managed by any declaration",
+			"Declare this network to arm the undeclared-peer alarm."))
+	default:
 		objs = append(objs, verdict(palAlarm,
 			"⚠ UNDECLARED — no declaration lists this key",
 			"A peer cannot appear by accident: cryptokey routing",

@@ -184,7 +184,7 @@ func (m model) View() string {
 				key = key[:12] + "…"
 			}
 			flag := " "
-			if !p.Declared {
+			if !p.Declared && d.Managed {
 				flag = stAlarm.Render("!")
 			}
 			line = fmt.Sprintf("  %s%s %s %s", mark, flag, stKey.Render(key), stDim.Render(p.Age()))
@@ -241,7 +241,10 @@ func (m model) deviceDossier(d Device) string {
 		}
 	}
 	fmt.Fprintf(&b, "  %s %d/%d peers handshaking\n", stAlive.Render("●"), alive, len(d.Peers))
-	if undeclared > 0 {
+	switch {
+	case !d.Managed:
+		fmt.Fprintf(&b, "  %s\n", stDim.Render("untracked — not managed by any wgxplore declaration"))
+	case undeclared > 0:
 		fmt.Fprintf(&b, "  %s %d peer(s) not in any declaration\n",
 			stAlarm.Render("⚠"), undeclared)
 	}
@@ -261,9 +264,12 @@ func (m model) peerDossier(d Device, p Peer) string {
 	fmt.Fprintf(&b, "  %-12s %s\n", "handshake", style.Render(p.Age()+"  ("+p.Health()+")"))
 	fmt.Fprintf(&b, "  %-12s rx %s / tx %s\n", "traffic", human(p.RxBytes), human(p.TxBytes))
 	fmt.Fprintf(&b, "  %-12s %s\n\n", "keepalive", orDash(p.Keepalive))
-	if p.Declared {
+	switch {
+	case p.Declared:
 		fmt.Fprintf(&b, "  %s declared — this peer is in a wgxplore network\n", stAlive.Render("✓"))
-	} else {
+	case !d.Managed:
+		fmt.Fprintf(&b, "  %s\n", stDim.Render("untracked — "+d.Name+" is not managed by any declaration"))
+	default:
 		fmt.Fprintf(&b, "  %s UNDECLARED — no declaration lists this key.\n", stAlarm.Render("⚠"))
 		fmt.Fprintf(&b, "    A peer cannot appear by accident: someone with root\n")
 		fmt.Fprintf(&b, "    on %s added it. Investigate.\n", d.Name)
