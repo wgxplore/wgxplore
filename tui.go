@@ -72,6 +72,9 @@ func (m *model) buildRows() {
 			hostLabel = "local"
 		}
 		devLine := fmt.Sprintf("%s  %s", hostLabel, d.Name)
+		if d.Name == "" && d.Err == "" {
+			devLine = hostLabel + "  (no WireGuard)"
+		}
 		match := f == "" || strings.Contains(strings.ToLower(devLine), f)
 		var kids []row
 		for pi, p := range d.Peers {
@@ -225,6 +228,12 @@ func (m model) deviceDossier(d Device) string {
 		host = "local"
 	}
 	var b strings.Builder
+	if d.Name == "" && d.Err == "" {
+		fmt.Fprintf(&b, "%s\n\n", stTitle.Render("host "+host))
+		fmt.Fprintf(&b, "  %s\n", stDim.Render("reachable — no WireGuard interfaces"))
+		fmt.Fprintf(&b, "  %s\n", stDim.Render("declare a network and add this host to give it one"))
+		return b.String()
+	}
 	fmt.Fprintf(&b, "%s\n\n", stTitle.Render("interface "+d.Name))
 	if d.Err != "" {
 		fmt.Fprintf(&b, "%s\n  %s\n", stErr.Render("UNREACHABLE"), d.Err)

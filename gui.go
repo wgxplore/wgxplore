@@ -212,8 +212,8 @@ func RunGUI() error {
 				kind[hu] = nHost
 				ref[hu] = [2]int{di, -1}
 			}
-			if d.Err != "" {
-				continue
+			if d.Err != "" || d.Name == "" {
+				continue // unreachable or no-WireGuard marker: host row only
 			}
 			iu := fmt.Sprintf("i:%d", di)
 			kids[hu] = append(kids[hu], iu)
@@ -263,11 +263,16 @@ func RunGUI() error {
 				name.Text = h
 				name.Color = palTeal
 				name.TextStyle = fyne.TextStyle{Bold: true}
-				if d.Err != "" {
+				switch {
+				case d.Err != "":
 					mark.FillColor = palStale
 					det.Text = "unreachable"
 					det.Color = palStale
-				} else {
+				case d.Name == "":
+					mark.FillColor = palDim
+					det.Text = strings.TrimSpace(hostIdentity(d, h) + " · no WireGuard")
+					det.Color = palDim
+				default:
 					mark.FillColor = palTeal
 					det.Text = hostIdentity(d, h)
 					det.Color = palDim

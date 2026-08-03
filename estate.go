@@ -313,6 +313,14 @@ func CollectEstate(hosts []string) []Device {
 			devs[i].HostFQDN = fqdn
 			devs[i].HostAddr = haddr
 		}
+		// A reachable host with ZERO WireGuard interfaces must still appear —
+		// inventory truth. Without this marker the host silently vanished
+		// from the tree, which read as "wgx is broken" the first time an
+		// operator inventoried plain VMs (2026-08-03). Name=="" is the
+		// marker the renderers translate to "no WireGuard interfaces".
+		if len(devs) == 0 {
+			devs = append(devs, Device{Host: host, HostFQDN: fqdn, HostAddr: haddr})
+		}
 		all = append(all, devs...)
 	}
 
@@ -428,7 +436,7 @@ func Totals(devs []Device) (hosts, ifaces, peers, alive, undeclared int) {
 	seen := map[string]bool{}
 	for _, d := range devs {
 		seen[d.Host] = true
-		if d.Err != "" {
+		if d.Err != "" || d.Name == "" {
 			continue
 		}
 		ifaces++
@@ -476,6 +484,10 @@ func PrintEstate() error {
 		}
 		if d.Err != "" {
 			fmt.Printf("  └─ unreachable: %s\n", d.Err)
+			continue
+		}
+		if d.Name == "" {
+			fmt.Printf("  └─ (no WireGuard interfaces)\n")
 			continue
 		}
 		fmt.Printf("  ├─ %s  %s  (%d peers)\n", d.Name, ifaceAddrText(d), len(d.Peers))
@@ -548,6 +560,10 @@ func DevicesOverview(devs []Device) string {
 	for _, d := range devs {
 		if d.Err != "" {
 			fmt.Fprintf(&b, "✗  %-16s %s\n", hostLabel(d.Host), "unreachable: "+d.Err)
+			continue
+		}
+		if d.Name == "" {
+			fmt.Fprintf(&b, "—  %-16s no WireGuard interfaces\n", hostLabel(d.Host))
 			continue
 		}
 		var alive, undecl int
