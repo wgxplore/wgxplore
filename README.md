@@ -14,9 +14,30 @@
 ![WireGuard](https://img.shields.io/badge/datapath-kernel%20WireGuard-88171a.svg)
 
 <img src="docs/screenshots/console-dark.png" width="880" alt="wgxplore console — a live estate: interface cards on top, five hosts with their WireGuard interfaces and peers in the tree, a peer dossier with its verdict on the right"/>
-<br/><sub>A real estate, live: the k8s backplane mesh across five hosts — plus two clones with no WireGuard yet, and one that's down. Nothing hidden, nothing invented.</sub>
 
 </div>
+
+**What you're looking at** — one hypervisor, photographed from the kernel,
+minutes after installing itself:
+
+- **A Kubernetes cluster on an encrypted backplane.** `kldload-cp` and
+  workers `w-1/w-2/w-3` are KVM VMs, each on *two* WireGuard planes —
+  `wg-k8s` (`10.251.0.0/24`, the data plane the CNI rides) and `wg-mgmt`
+  (`10.250.0.0/24`: SSH, kubelet↔API, etcd). Every card top-right shows
+  its port and live rx/tx; **40 peers, 40 alive** in the header means the
+  full node mesh is handshaking. All k8s traffic between these nodes is
+  kernel-encrypted *underneath* the cluster — the CNI never knows.
+- **VMs in every state of life.** Two freshly-built template VMs
+  (`klab-golden-centos`, `-rocky`) show dim — reachable, *no WireGuard
+  yet*, honestly inventoried rather than hidden. One VM mid-provision
+  shows red — `unreachable`, at the bottom, because down is information.
+- **The dossier explains itself.** A selected peer shows its key,
+  endpoint, allowed-ips (the kernel-enforced answer to "what may this key
+  reach"), live traffic, and a verdict: this interface is *untracked* —
+  declare it, and any peer nobody added starts rendering in alarm pink.
+- Hosts are sorted and named by identity, with the ssh target demoted to
+  a detail; the console found all of this by reading `wg show` over plain
+  ssh — the machines run no agent.
 
 `wgxplore` is a fast, keyboard-driven console for the WireGuard you already
 run. Declare networks in a file, attach anything to them — hosts, VMs,
