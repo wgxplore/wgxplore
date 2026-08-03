@@ -39,6 +39,52 @@ Others build on WireGuard. **wgxplore's product *is* WireGuard, managed.**
 
 ---
 
+## First: what WireGuard is, and why it changes things
+
+If you already run WireGuard, skip ahead. If not, this is the foundation
+everything below stands on.
+
+**WireGuard is a VPN protocol built into the Linux kernel** (mainline
+since 5.6, 2020 — and implemented on every other OS that matters). It
+does one thing: an encrypted tunnel between two machines. What made it
+famous is how it does it:
+
+- **Identity is a keypair, like ssh.** No certificates, no CAs, no
+  usernames. A machine *is* its key; a tunnel is "my private key + your
+  public key." If you've ever added an ssh public key to
+  `authorized_keys`, you already understand WireGuard's entire trust
+  model.
+- **The peer list is the firewall.** Each peer entry says which addresses
+  that key may use (*cryptokey routing*). A packet from an address the
+  key doesn't own is dropped by the kernel; a machine whose key you never
+  added cannot produce a single byte your interface will accept. Policy
+  isn't a service that checks packets — it's arithmetic on keys.
+- **It's ~4,000 lines of code.** OpenVPN and IPsec are hundreds of
+  thousands. Small enough to actually audit, with one modern cipher suite
+  (Noise framework, ChaCha20-Poly1305, Curve25519) and **no negotiation**
+  — there is no "downgrade to the broken cipher" attack because there is
+  nothing to negotiate.
+- **It's invisible.** A WireGuard port never answers an unauthenticated
+  packet — to a scanner, the port doesn't exist. Your network can't be
+  probed by anyone who isn't already in it.
+- **It's in the kernel**, so it runs at line rate on all cores, and
+  roaming is built in — change networks mid-connection (wifi → LTE) and
+  the tunnel just follows.
+
+Why this changes how we interact with networks: the old model trusts
+*places* — the office LAN, the home wifi, the cloud VPC — and breaks the
+moment your machines live in more than one place. WireGuard inverts it:
+**trust keys, not networks.** Any two machines that hold each other's
+public keys share a private, encrypted wire across any hostile network in
+between — coffee-shop wifi, an ISP, the open internet. The network stops
+being something you're *on* and becomes something you *declare*.
+
+The one thing WireGuard deliberately leaves out is everything above the
+tunnel: distributing keys, keeping N machines' configs consistent, seeing
+your whole estate, noticing a key you didn't add. Its authors left that
+to userspace on purpose. That gap is exactly where wgxplore lives — and
+*only* that gap.
+
 ## Suddenly, the hard stuff is a gesture
 
 - **Your whole WireGuard estate is one screen.** Every interface on every
