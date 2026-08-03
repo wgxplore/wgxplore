@@ -264,6 +264,14 @@ both directions:
 
 No flag day: point wgxplore at what you have, declare what you add.
 
+The deeper point: all of this runs **underneath whatever networking you
+already have**. An overlay in implementation, an *underlay* in role —
+declared subnets ride beside your LAN, beneath your apps and your CNI,
+claiming only the addresses you declared and asking nothing else to
+change. Two on-ramps: drop one static binary onto the OS you run today,
+or install a [kldload](https://kldload.com) substrate and arrive
+born-wired — backplane declared, estate visible, before second login.
+
 ## Boundaries: vs Tailscale, NetBird, wesher
 
 **What's the same is the wire** — all of these move packets as real
