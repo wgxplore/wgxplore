@@ -2,9 +2,15 @@
 
 // gui.go — the native wgxplore window (Fyne), sibling to zxplore's GUI.
 //
-// Same two-pane shape as the TUI and as zxplore: the estate on the left, a
-// full dossier on the right. Read-only; mutations stay behind the engine's
-// explicit verbs so every change is a visible wg/ip command.
+// A themed console, not a stock-widget form: dark slate chassis, the brand
+// teal/amber of the wgxplore mark, and colour used for SEPARATION — health
+// states (alive/quiet/stale), the undeclared-peer alarm, and the summary
+// chips each own a colour so the eye finds trouble before reading a word.
+// Layout is the same two-pane shape as the TUI and as zxplore: estate tree
+// on the left, full dossier on the right, interface cards across the top.
+//
+// Read-only. Mutations stay behind the engine's explicit verbs so every
+// change is a visible wg/ip command.
 //
 // Window title is EXACTLY the app name: GLFW derives the X11 WM_CLASS from
 // the title at window creation, and the shell maps WM_CLASS → .desktop for
@@ -21,17 +27,137 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
+// ─── palette ─────────────────────────────────────────────────────────────
+// One source of truth, shared by the theme and every hand-drawn element.
+// Brand colours match the wgxplore mark (teal glyph, amber hub) and the
+// health colours match the TUI so the two consoles read as one product.
 var (
-	colAlive = color.NRGBA{0x4c, 0xb9, 0x8a, 0xff}
-	colQuiet = color.NRGBA{0xe6, 0xa5, 0x5f, 0xff}
-	colStale = color.NRGBA{0xdc, 0x48, 0x48, 0xff}
-	colAlarm = color.NRGBA{0xff, 0x5c, 0xd6, 0xff}
+	palBg     = color.NRGBA{0x10, 0x16, 0x1d, 0xff} // window
+	palPanel  = color.NRGBA{0x17, 0x1f, 0x28, 0xff} // cards, inputs, buttons
+	palRaised = color.NRGBA{0x1d, 0x27, 0x31, 0xff} // hovered / chip face
+	palLine   = color.NRGBA{0x24, 0x30, 0x3b, 0xff} // separators, borders
+	palFg     = color.NRGBA{0xdc, 0xe6, 0xee, 0xff} // primary text
+	palDim    = color.NRGBA{0x7d, 0x8d, 0x9b, 0xff} // secondary text
+	palTeal   = color.NRGBA{0x49, 0xc7, 0xc0, 0xff} // brand / focus / links
+	palAmber  = color.NRGBA{0xf0, 0xc6, 0x74, 0xff} // hub accent / warnings
+	palAlive  = color.NRGBA{0x4c, 0xb9, 0x8a, 0xff} // handshake < 3m
+	palQuiet  = color.NRGBA{0xe6, 0xa5, 0x5f, 0xff} // handshake < 30m
+	palStale  = color.NRGBA{0xdc, 0x48, 0x48, 0xff} // stale / unreachable
+	palAlarm  = color.NRGBA{0xff, 0x5c, 0xd6, 0xff} // UNDECLARED — the alarm
+	palSelect = color.NRGBA{0x1b, 0x3a, 0x3e, 0xff} // selection wash (teal-dark)
 )
+
+func healthColor(h string) color.NRGBA {
+	switch h {
+	case "alive":
+		return palAlive
+	case "quiet":
+		return palQuiet
+	}
+	return palStale
+}
+
+// ─── theme ───────────────────────────────────────────────────────────────
+// wgxTheme forces the console's own dark palette regardless of the desktop
+// variant — the estate view is a night console, and health colours are
+// calibrated against this background. Fonts/icons/sizes delegate to the
+// default theme so text metrics stay platform-correct.
+type wgxTheme struct{}
+
+func (wgxTheme) Color(n fyne.ThemeColorName, _ fyne.ThemeVariant) color.Color {
+	switch n {
+	case theme.ColorNameBackground:
+		return palBg
+	case theme.ColorNameForeground:
+		return palFg
+	case theme.ColorNamePrimary, theme.ColorNameFocus, theme.ColorNameHyperlink:
+		return palTeal
+	case theme.ColorNameButton, theme.ColorNameInputBackground:
+		return palPanel
+	case theme.ColorNameHover:
+		return palRaised
+	case theme.ColorNamePressed:
+		return palSelect
+	case theme.ColorNameSelection:
+		return palSelect
+	case theme.ColorNameSeparator, theme.ColorNameInputBorder:
+		return palLine
+	case theme.ColorNamePlaceHolder, theme.ColorNameDisabled:
+		return palDim
+	case theme.ColorNameScrollBar:
+		return palLine
+	case theme.ColorNameSuccess:
+		return palAlive
+	case theme.ColorNameWarning:
+		return palQuiet
+	case theme.ColorNameError:
+		return palStale
+	case theme.ColorNameHeaderBackground, theme.ColorNameMenuBackground,
+		theme.ColorNameOverlayBackground:
+		return palPanel
+	case theme.ColorNameForegroundOnPrimary:
+		return palBg
+	case theme.ColorNameShadow:
+		return color.NRGBA{0, 0, 0, 0x66}
+	}
+	return theme.DefaultTheme().Color(n, theme.VariantDark)
+}
+
+func (wgxTheme) Font(s fyne.TextStyle) fyne.Resource { return theme.DefaultTheme().Font(s) }
+func (wgxTheme) Icon(n fyne.ThemeIconName) fyne.Resource {
+	return theme.DefaultTheme().Icon(n)
+}
+func (wgxTheme) Size(n fyne.ThemeSizeName) float32 { return theme.DefaultTheme().Size(n) }
+
+// ─── small drawing helpers ───────────────────────────────────────────────
+
+func txt(s string, c color.NRGBA, size float32, style fyne.TextStyle) *canvas.Text {
+	t := canvas.NewText(s, c)
+	t.TextSize = size
+	t.TextStyle = style
+	return t
+}
+
+// dot renders a fixed-size status circle — the smallest possible unit of
+// colour separation; the tree and the cards both lead with one.
+func dot(c color.NRGBA) fyne.CanvasObject {
+	ci := canvas.NewCircle(c)
+	return container.NewCenter(container.NewGridWrap(fyne.NewSize(10, 10), ci))
+}
+
+// card wraps content on the raised panel colour with rounded corners.
+func card(content fyne.CanvasObject) fyne.CanvasObject {
+	bg := canvas.NewRectangle(palPanel)
+	bg.CornerRadius = 8
+	return container.NewStack(bg, container.NewPadded(content))
+}
+
+// chip is a compact "value + label" summary tile for the header row.
+func chip(value, label string, c color.NRGBA) fyne.CanvasObject {
+	bg := canvas.NewRectangle(palRaised)
+	bg.CornerRadius = 8
+	return container.NewStack(bg, container.NewPadded(container.NewHBox(
+		txt(value, c, 14, fyne.TextStyle{Bold: true}),
+		txt(label, palDim, 12, fyne.TextStyle{}),
+	)))
+}
+
+func kv(rows ...[2]string) fyne.CanvasObject {
+	var objs []fyne.CanvasObject
+	for _, r := range rows {
+		objs = append(objs,
+			txt(r[0], palDim, 13, fyne.TextStyle{}),
+			txt(r[1], palFg, 13, fyne.TextStyle{Monospace: true}))
+	}
+	return container.New(layout.NewFormLayout(), objs...)
+}
 
 type nodeKind int
 
@@ -41,32 +167,30 @@ const (
 	nPeer
 )
 
-// RunGUI opens the console window: an expandable estate tree on the left
-// (host → interface → peer, the way an explorer trees folders), a full
-// dossier on the right.
+// ─── the window ──────────────────────────────────────────────────────────
+
+// RunGUI opens the console: summary chips and one card per interface across
+// the top, the expandable estate tree on the left (host → interface → peer),
+// a full dossier for the selection on the right.
 func RunGUI() error {
 	a := app.NewWithID("ca.wgxplore")
+	a.Settings().SetTheme(wgxTheme{})
 	a.SetIcon(theme.ComputerIcon())
 	w := a.NewWindow("wgxplore")
-	_ = versionFull() // build stamp shown in the summary line below
-	w.Resize(fyne.NewSize(1150, 720))
+	w.Resize(fyne.NewSize(1180, 740))
 
 	var (
-		devs    []Device
-		hosts   = sshHosts()
-		summary = widget.NewLabel("scanning estate…")
-		// Devices bar — the analogue of zxplore's zpool overview: one line
-		// per WireGuard interface so the top of the window answers "what
-		// have I got, is it healthy" before you touch the tree.
-		devices = widget.NewLabel("… scanning interfaces")
-		dossier = widget.NewRichTextFromMarkdown("")
-		// tree index, rebuilt on every load
-		kids = map[string][]string{}
-		kind = map[string]nodeKind{}
-		ref  = map[string][2]int{} // uid → {device idx, peer idx(-1)}
+		devs  []Device
+		hosts = sshHosts()
+		// header: brand + build left, summary chips right — rebuilt per load
+		chips   = container.NewHBox()
+		status  = txt("scanning estate…", palDim, 13, fyne.TextStyle{Italic: true})
+		cards   = container.NewVBox() // one card per interface
+		dossier = container.NewVBox() // right pane, rebuilt on select
+		kids    = map[string][]string{}
+		kind    = map[string]nodeKind{}
+		ref     = map[string][2]int{} // uid → {device idx, peer idx(-1)}
 	)
-	dossier.Wrapping = fyne.TextWrapWord
-	devices.TextStyle = fyne.TextStyle{Monospace: true}
 
 	reindex := func() {
 		kids = map[string][]string{}
@@ -101,15 +225,29 @@ func RunGUI() error {
 		}
 	}
 
+	// ── tree: every row is dot + name + detail + alarm badge ─────────────
 	tree := widget.NewTree(
 		func(uid widget.TreeNodeID) []widget.TreeNodeID { return kids[uid] },
 		func(uid widget.TreeNodeID) bool { return len(kids[uid]) > 0 },
-		func(branch bool) fyne.CanvasObject { return widget.NewLabel("node") },
+		func(branch bool) fyne.CanvasObject {
+			return container.NewHBox(
+				dot(palDim),
+				txt("node", palFg, 13, fyne.TextStyle{}),
+				txt("", palDim, 12, fyne.TextStyle{}),
+				txt("", palAlarm, 12, fyne.TextStyle{Bold: true}),
+			)
+		},
 		func(uid widget.TreeNodeID, branch bool, o fyne.CanvasObject) {
-			lbl := o.(*widget.Label)
+			box := o.(*fyne.Container)
+			mark := box.Objects[0].(*fyne.Container).Objects[0].(*fyne.Container).Objects[0].(*canvas.Circle)
+			name := box.Objects[1].(*canvas.Text)
+			det := box.Objects[2].(*canvas.Text)
+			badge := box.Objects[3].(*canvas.Text)
+			badge.Text = ""
 			r, ok := ref[uid]
 			if !ok {
-				lbl.SetText(uid)
+				name.Text = uid
+				name.Refresh()
 				return
 			}
 			d := devs[r[0]]
@@ -119,29 +257,51 @@ func RunGUI() error {
 				if h == "" {
 					h = "local"
 				}
-				lbl.TextStyle = fyne.TextStyle{Bold: true}
+				name.Text = h
+				name.Color = palTeal
+				name.TextStyle = fyne.TextStyle{Bold: true}
 				if d.Err != "" {
-					lbl.SetText("🖧 " + h + "  — unreachable")
+					mark.FillColor = palStale
+					det.Text = "unreachable"
+					det.Color = palStale
 				} else {
-					lbl.SetText("🖧 " + h)
+					mark.FillColor = palTeal
+					det.Text = ""
 				}
 			case nIface:
-				lbl.TextStyle = fyne.TextStyle{Bold: false}
-				lbl.SetText(fmt.Sprintf("⇄ %s   %s   (%d peers)",
-					d.Name, ifaceSubnet(d), len(d.Peers)))
+				name.Text = d.Name
+				name.Color = palFg
+				name.TextStyle = fyne.TextStyle{Bold: true}
+				mark.FillColor = palAmber
+				det.Text = fmt.Sprintf("%s · %d peers", ifaceSubnet(d), len(d.Peers))
+				det.Color = palDim
 			case nPeer:
 				p := d.Peers[r[1]]
-				dot := map[string]string{"alive": "●", "quiet": "●", "stale": "○", "never": "○"}[p.Health()]
-				flag := ""
-				if !p.Declared {
-					flag = "  ⚠"
+				mark.FillColor = healthColor(p.Health())
+				key := p.PublicKey
+				if len(key) > 12 {
+					key = key[:12] + "…"
 				}
-				lbl.TextStyle = fyne.TextStyle{Monospace: true}
-				lbl.SetText(fmt.Sprintf("%s %-18s %-22s %s%s",
-					dot, firstIP(p.AllowedIPs), orDash(p.Endpoint), p.Age(), flag))
+				name.Text = key
+				name.Color = palFg
+				name.TextStyle = fyne.TextStyle{Monospace: true}
+				det.Text = firstIP(p.AllowedIPs) + " · " + p.Age()
+				det.Color = palDim
+				if !p.Declared {
+					badge.Text = "⚠"
+				}
 			}
+			mark.Refresh()
+			name.Refresh()
+			det.Refresh()
+			badge.Refresh()
 		},
 	)
+
+	setDossier := func(objs ...fyne.CanvasObject) {
+		dossier.Objects = objs
+		dossier.Refresh()
+	}
 
 	tree.OnSelected = func(uid widget.TreeNodeID) {
 		r, ok := ref[uid]
@@ -149,62 +309,272 @@ func RunGUI() error {
 			return
 		}
 		d := devs[r[0]]
-		if kind[uid] == nPeer {
-			dossier.ParseMarkdown(guiPeerDossier(d, d.Peers[r[1]]))
-			return
+		switch kind[uid] {
+		case nPeer:
+			setDossier(guiPeerDossier(d, d.Peers[r[1]])...)
+		case nHost:
+			setDossier(guiHostDossier(devs, d.Host)...)
+		default:
+			setDossier(guiDeviceDossier(d)...)
 		}
-		if kind[uid] == nHost {
-			dossier.ParseMarkdown(guiHostDossier(devs, d.Host))
-			return
+	}
+
+	// ── interface cards — the zpool-bar analogue, one card per interface ─
+	rebuildCards := func() {
+		cards.Objects = nil
+		for _, d := range devs {
+			if d.Err != "" {
+				cards.Objects = append(cards.Objects, card(container.NewHBox(
+					dot(palStale),
+					txt(hostLabel(d.Host), palFg, 13, fyne.TextStyle{Bold: true}),
+					txt("unreachable: "+d.Err, palStale, 12, fyne.TextStyle{}),
+				)))
+				continue
+			}
+			var alive, undecl int
+			var rx, tx int64
+			for _, p := range d.Peers {
+				if p.Health() == "alive" {
+					alive++
+				}
+				if !p.Declared {
+					undecl++
+				}
+				rx += p.RxBytes
+				tx += p.TxBytes
+			}
+			mark := palAlive
+			if len(d.Peers) > 0 && alive == 0 {
+				mark = palQuiet
+			}
+			name := d.Name
+			if d.Host != "" {
+				name = d.Host + ":" + d.Name
+			}
+			aliveCol := palAlive
+			if alive == 0 {
+				aliveCol = palDim
+			}
+			row := container.NewHBox(
+				dot(mark),
+				txt(name, palFg, 13, fyne.TextStyle{Bold: true}),
+				txt(ifaceSubnet(d), palTeal, 12, fyne.TextStyle{Monospace: true}),
+				layout.NewSpacer(),
+				txt(fmt.Sprintf("%d peers", len(d.Peers)), palDim, 12, fyne.TextStyle{}),
+				txt(fmt.Sprintf("%d alive", alive), aliveCol, 12, fyne.TextStyle{Bold: true}),
+				txt("port "+orDash(d.ListenPort), palDim, 12, fyne.TextStyle{Monospace: true}),
+				txt("rx "+human(rx)+" · tx "+human(tx), palDim, 12, fyne.TextStyle{Monospace: true}),
+			)
+			if undecl > 0 {
+				row.Add(txt(fmt.Sprintf("⚠ %d undeclared", undecl), palAlarm, 12,
+					fyne.TextStyle{Bold: true}))
+			}
+			cards.Objects = append(cards.Objects, card(row))
 		}
-		dossier.ParseMarkdown(guiDeviceDossier(d))
+		if len(cards.Objects) == 0 {
+			cards.Objects = []fyne.CanvasObject{card(
+				txt("no WireGuard interfaces found", palDim, 13, fyne.TextStyle{Italic: true}))}
+		}
+		cards.Refresh()
+	}
+
+	rebuildChips := func() {
+		h, i, p, alive, undeclared := Totals(devs)
+		chips.Objects = []fyne.CanvasObject{
+			chip(fmt.Sprint(h), "hosts", palFg),
+			chip(fmt.Sprint(i), "interfaces", palFg),
+			chip(fmt.Sprint(p), "peers", palFg),
+			chip(fmt.Sprint(alive), "alive", palAlive),
+		}
+		if undeclared > 0 {
+			chips.Objects = append(chips.Objects,
+				chip(fmt.Sprint(undeclared), "UNDECLARED", palAlarm))
+		}
+		chips.Refresh()
 	}
 
 	reload := func() {
-		summary.SetText("scanning estate…")
+		status.Text = "scanning estate…"
+		status.Refresh()
 		go func() {
 			d := CollectEstate(hosts)
 			MarkDeclared(d)
 			fyne.Do(func() {
 				devs = d
 				reindex()
-				h, i, p, al, un := Totals(devs)
-				s := fmt.Sprintf("wgxplore %s   ·   %d hosts · %d interfaces · %d peers · %d alive",
-					versionFull(), h, i, p, al)
-				if un > 0 {
-					s += fmt.Sprintf("   ⚠ %d UNDECLARED", un)
-				}
-				summary.SetText(s)
-				devices.SetText(DevicesOverview(devs))
+				rebuildChips()
+				rebuildCards()
+				status.Text = fmt.Sprintf("scanned %s", time.Now().Format("15:04:05"))
+				status.Refresh()
 				tree.Refresh()
 				for _, hu := range kids[""] {
-					tree.OpenBranch(hu) // hosts open by default; interfaces expand on click
+					tree.OpenBranch(hu) // hosts open; interfaces expand on click
 				}
 			})
 		}()
 	}
 
 	refresh := widget.NewButtonWithIcon("Refresh", theme.ViewRefreshIcon(), reload)
+	refresh.Importance = widget.HighImportance
 	expand := widget.NewButtonWithIcon("Expand all", theme.MenuDropDownIcon(), func() {
 		for uid := range kids {
 			tree.OpenBranch(uid)
 		}
 	})
-	head := container.NewBorder(nil, nil, nil, container.NewHBox(expand, refresh), summary)
-	top := container.NewVBox(head, widget.NewSeparator(), devices, widget.NewSeparator())
-	split := container.NewHSplit(tree, container.NewVScroll(dossier))
-	split.Offset = 0.46
+
+	brand := container.NewHBox(
+		txt("wgxplore", palTeal, 20, fyne.TextStyle{Bold: true}),
+		txt(versionFull(), palDim, 12, fyne.TextStyle{Monospace: true}),
+		txt("·", palLine, 12, fyne.TextStyle{}),
+		status,
+	)
+	head := container.NewBorder(nil, nil, brand,
+		container.NewHBox(chips, expand, refresh))
+	top := container.NewVBox(container.NewPadded(head), cards, widget.NewSeparator())
+
+	split := container.NewHSplit(tree,
+		container.NewVScroll(container.NewPadded(dossier)))
+	split.Offset = 0.42
 	w.SetContent(container.NewBorder(top, nil, nil, nil, split))
 
+	setDossier(
+		txt("estate", palTeal, 16, fyne.TextStyle{Bold: true}),
+		txt("select a host, interface or peer", palDim, 13, fyne.TextStyle{Italic: true}),
+	)
 	reload()
 	go func() {
 		for range time.Tick(30 * time.Second) {
-			reload()
+			fyne.Do(reload)
 		}
 	}()
 
 	w.ShowAndRun()
 	return nil
+}
+
+// ─── dossiers — structured panels, not markdown ──────────────────────────
+// Each dossier is a title, a key/value block, and a coloured verdict card:
+// green wash = declared/healthy, pink wash = the undeclared alarm, red =
+// unreachable. The verdict carries the "so what", the kv block the facts.
+
+func verdict(c color.NRGBA, lines ...string) fyne.CanvasObject {
+	bg := canvas.NewRectangle(color.NRGBA{c.R, c.G, c.B, 0x22})
+	bg.CornerRadius = 8
+	var objs []fyne.CanvasObject
+	for i, l := range lines {
+		st := fyne.TextStyle{}
+		col := palFg
+		if i == 0 {
+			st = fyne.TextStyle{Bold: true}
+			col = c
+		}
+		objs = append(objs, txt(l, col, 13, st))
+	}
+	return container.NewStack(bg, container.NewPadded(container.NewVBox(objs...)))
+}
+
+func guiHostDossier(devs []Device, host string) []fyne.CanvasObject {
+	var ifaces, peers, alive, undecl int
+	for _, d := range devs {
+		if d.Host != host {
+			continue
+		}
+		if d.Err != "" {
+			return []fyne.CanvasObject{
+				txt("host "+hostLabel(host), palTeal, 16, fyne.TextStyle{Bold: true}),
+				verdict(palStale, "UNREACHABLE", d.Err),
+			}
+		}
+		ifaces++
+		for _, p := range d.Peers {
+			peers++
+			if p.Health() == "alive" {
+				alive++
+			}
+			if !p.Declared {
+				undecl++
+			}
+		}
+	}
+	objs := []fyne.CanvasObject{
+		txt("host "+hostLabel(host), palTeal, 16, fyne.TextStyle{Bold: true}),
+		kv(
+			[2]string{"interfaces", fmt.Sprint(ifaces)},
+			[2]string{"peers", fmt.Sprint(peers)},
+			[2]string{"handshaking", fmt.Sprint(alive)},
+		),
+	}
+	if undecl > 0 {
+		objs = append(objs, verdict(palAlarm,
+			fmt.Sprintf("⚠ %d peer(s) not in any declaration", undecl),
+			"Someone with root added them. Investigate."))
+	}
+	return objs
+}
+
+func guiDeviceDossier(d Device) []fyne.CanvasObject {
+	if d.Err != "" {
+		return []fyne.CanvasObject{
+			txt(hostLabel(d.Host), palTeal, 16, fyne.TextStyle{Bold: true}),
+			verdict(palStale, "UNREACHABLE", d.Err),
+		}
+	}
+	var alive, undeclared int
+	for _, p := range d.Peers {
+		if p.Health() == "alive" {
+			alive++
+		}
+		if !p.Declared {
+			undeclared++
+		}
+	}
+	objs := []fyne.CanvasObject{
+		txt("interface "+d.Name, palTeal, 16, fyne.TextStyle{Bold: true}),
+		kv(
+			[2]string{"host", hostLabel(d.Host)},
+			[2]string{"public key", d.PublicKey},
+			[2]string{"listen port", orDash(d.ListenPort)},
+			[2]string{"peers", fmt.Sprintf("%d (%d handshaking)", len(d.Peers), alive)},
+			[2]string{"routes", ifaceSubnet(d)},
+		),
+	}
+	if undeclared > 0 {
+		objs = append(objs, verdict(palAlarm,
+			fmt.Sprintf("⚠ %d peer(s) not in any declaration", undeclared),
+			"Someone with root added them. Investigate."))
+	} else if len(d.Peers) > 0 {
+		objs = append(objs, verdict(palAlive, "✓ all peers declared"))
+	}
+	return objs
+}
+
+func guiPeerDossier(d Device, p Peer) []fyne.CanvasObject {
+	h := p.Health()
+	objs := []fyne.CanvasObject{
+		container.NewHBox(
+			dot(healthColor(h)),
+			txt("peer", palTeal, 16, fyne.TextStyle{Bold: true}),
+			txt(h+" · "+p.Age(), healthColor(h), 13, fyne.TextStyle{Bold: true}),
+		),
+		kv(
+			[2]string{"public key", p.PublicKey},
+			[2]string{"on", hostLabel(d.Host) + " · " + d.Name},
+			[2]string{"endpoint", orDash(p.Endpoint)},
+			[2]string{"allowed-ips", p.AllowedIPs},
+			[2]string{"traffic", "rx " + human(p.RxBytes) + " · tx " + human(p.TxBytes)},
+			[2]string{"keepalive", orDash(p.Keepalive)},
+		),
+	}
+	if p.Declared {
+		objs = append(objs, verdict(palAlive,
+			"✓ declared — this peer is in a wgxplore network"))
+	} else {
+		objs = append(objs, verdict(palAlarm,
+			"⚠ UNDECLARED — no declaration lists this key",
+			"A peer cannot appear by accident: cryptokey routing",
+			"means someone with root on "+d.Name+" added it. Investigate."))
+	}
+	return objs
 }
 
 // ifaceSubnet summarises what an interface routes, e.g. "10.250.0.0/24",
@@ -242,93 +612,4 @@ func ifaceSubnet(d Device) string {
 func firstIP(allowed string) string {
 	f := strings.Split(allowed, ",")[0]
 	return strings.TrimSpace(f)
-}
-
-// guiHostDossier rolls every interface on one host into a summary.
-func guiHostDossier(devs []Device, host string) string {
-	label := host
-	if label == "" {
-		label = "local"
-	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "## host %s\n\n", label)
-	var ifaces, peers, alive, undecl int
-	for _, d := range devs {
-		if d.Host != host {
-			continue
-		}
-		if d.Err != "" {
-			fmt.Fprintf(&b, "**UNREACHABLE**\n\n```\n%s\n```\n", d.Err)
-			return b.String()
-		}
-		ifaces++
-		for _, p := range d.Peers {
-			peers++
-			if p.Health() == "alive" {
-				alive++
-			}
-			if !p.Declared {
-				undecl++
-			}
-		}
-	}
-	fmt.Fprintf(&b, "| | |\n|---|---|\n")
-	fmt.Fprintf(&b, "| interfaces | %d |\n", ifaces)
-	fmt.Fprintf(&b, "| peers | %d |\n", peers)
-	fmt.Fprintf(&b, "| handshaking | %d |\n", alive)
-	if undecl > 0 {
-		fmt.Fprintf(&b, "\n**⚠ %d peer(s) not in any declaration.**\n", undecl)
-	}
-	return b.String()
-}
-
-func guiDeviceDossier(d Device) string {
-	host := d.Host
-	if host == "" {
-		host = "local"
-	}
-	if d.Err != "" {
-		return fmt.Sprintf("## %s\n\n**UNREACHABLE**\n\n```\n%s\n```\n", host, d.Err)
-	}
-	var alive, undeclared int
-	for _, p := range d.Peers {
-		if p.Health() == "alive" {
-			alive++
-		}
-		if !p.Declared {
-			undeclared++
-		}
-	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "## interface %s\n\n", d.Name)
-	fmt.Fprintf(&b, "| | |\n|---|---|\n")
-	fmt.Fprintf(&b, "| host | %s |\n", host)
-	fmt.Fprintf(&b, "| public key | `%s` |\n", d.PublicKey)
-	fmt.Fprintf(&b, "| listen port | %s |\n", orDash(d.ListenPort))
-	fmt.Fprintf(&b, "| peers | %d (%d handshaking) |\n", len(d.Peers), alive)
-	if undeclared > 0 {
-		fmt.Fprintf(&b, "\n**⚠ %d peer(s) are not in any declaration.**\n", undeclared)
-	}
-	return b.String()
-}
-
-func guiPeerDossier(d Device, p Peer) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "## peer\n\n")
-	fmt.Fprintf(&b, "| | |\n|---|---|\n")
-	fmt.Fprintf(&b, "| public key | `%s` |\n", p.PublicKey)
-	fmt.Fprintf(&b, "| on | %s |\n", d.Name)
-	fmt.Fprintf(&b, "| endpoint | %s |\n", orDash(p.Endpoint))
-	fmt.Fprintf(&b, "| allowed-ips | `%s` |\n", p.AllowedIPs)
-	fmt.Fprintf(&b, "| handshake | **%s** (%s) |\n", p.Age(), p.Health())
-	fmt.Fprintf(&b, "| traffic | rx %s / tx %s |\n", human(p.RxBytes), human(p.TxBytes))
-	fmt.Fprintf(&b, "| keepalive | %s |\n", orDash(p.Keepalive))
-	if p.Declared {
-		fmt.Fprintf(&b, "\n✓ **Declared** — this peer belongs to a wgxplore network.\n")
-	} else {
-		fmt.Fprintf(&b, "\n⚠ **UNDECLARED** — no declaration lists this key.\n\n")
-		fmt.Fprintf(&b, "A peer cannot appear by accident: cryptokey routing means "+
-			"someone with root on `%s` added it. Investigate.\n", d.Name)
-	}
-	return b.String()
 }
