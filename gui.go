@@ -411,6 +411,18 @@ func RunGUI() error {
 				)))
 				continue
 			}
+			// No-WireGuard marker: a card row too, but dim and honest — the
+			// first cut fell through to the interface template and painted a
+			// GREEN "host:" card with 0 peers for hosts that have no
+			// interface at all (goldens on .119, 2026-08-03).
+			if d.Name == "" {
+				cards.Objects = append(cards.Objects, card(container.NewHBox(
+					dot(palDim),
+					txt(hostLabel(d.Host), palDim, 13, fyne.TextStyle{Bold: true}),
+					txt("no WireGuard interfaces", palDim, 12, fyne.TextStyle{Italic: true}),
+				)))
+				continue
+			}
 			var alive, undecl int
 			var rx, tx int64
 			for _, p := range d.Peers {
