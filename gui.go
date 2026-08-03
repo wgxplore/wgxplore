@@ -38,21 +38,75 @@ import (
 // One source of truth, shared by the theme and every hand-drawn element.
 // Brand colours match the wgxplore mark (teal glyph, amber hub) and the
 // health colours match the TUI so the two consoles read as one product.
+// TWO palettes — the console honours the OS light/dark preference (it
+// shipped perma-dark first; the family standard, set by zxplore, is both).
+// The pal* globals are the ACTIVE palette; setPalette flips them and the
+// settings listener in RunGUI reacts to live OS theme changes.
+type wgxPalette struct {
+	bg, panel, raised, line, fg, dim,
+	teal, amber, alive, quiet, stale, alarm, sel color.NRGBA
+}
+
+var darkPal = wgxPalette{
+	bg:     color.NRGBA{0x10, 0x16, 0x1d, 0xff},
+	panel:  color.NRGBA{0x17, 0x1f, 0x28, 0xff},
+	raised: color.NRGBA{0x1d, 0x27, 0x31, 0xff},
+	line:   color.NRGBA{0x24, 0x30, 0x3b, 0xff},
+	fg:     color.NRGBA{0xdc, 0xe6, 0xee, 0xff},
+	dim:    color.NRGBA{0x7d, 0x8d, 0x9b, 0xff},
+	teal:   color.NRGBA{0x49, 0xc7, 0xc0, 0xff},
+	amber:  color.NRGBA{0xf0, 0xc6, 0x74, 0xff},
+	alive:  color.NRGBA{0x4c, 0xb9, 0x8a, 0xff},
+	quiet:  color.NRGBA{0xe6, 0xa5, 0x5f, 0xff},
+	stale:  color.NRGBA{0xdc, 0x48, 0x48, 0xff},
+	alarm:  color.NRGBA{0xff, 0x5c, 0xd6, 0xff},
+	sel:    color.NRGBA{0x1b, 0x3a, 0x3e, 0xff},
+}
+
+// Light: same hues, darkened for contrast on paper-white — the teal/amber
+// stay recognisably the brand, health colours stay red/amber/green.
+var lightPal = wgxPalette{
+	bg:     color.NRGBA{0xf4, 0xf7, 0xf9, 0xff},
+	panel:  color.NRGBA{0xe9, 0xee, 0xf2, 0xff},
+	raised: color.NRGBA{0xde, 0xe6, 0xec, 0xff},
+	line:   color.NRGBA{0xc8, 0xd3, 0xdb, 0xff},
+	fg:     color.NRGBA{0x22, 0x2f, 0x39, 0xff},
+	dim:    color.NRGBA{0x5c, 0x6b, 0x77, 0xff},
+	teal:   color.NRGBA{0x11, 0x8a, 0x84, 0xff},
+	amber:  color.NRGBA{0xa8, 0x77, 0x1c, 0xff},
+	alive:  color.NRGBA{0x25, 0x8a, 0x60, 0xff},
+	quiet:  color.NRGBA{0xb0, 0x6f, 0x1f, 0xff},
+	stale:  color.NRGBA{0xc0, 0x30, 0x30, 0xff},
+	alarm:  color.NRGBA{0xc2, 0x1f, 0x94, 0xff},
+	sel:    color.NRGBA{0xc5, 0xe6, 0xe3, 0xff},
+}
+
 var (
-	palBg     = color.NRGBA{0x10, 0x16, 0x1d, 0xff} // window
-	palPanel  = color.NRGBA{0x17, 0x1f, 0x28, 0xff} // cards, inputs, buttons
-	palRaised = color.NRGBA{0x1d, 0x27, 0x31, 0xff} // hovered / chip face
-	palLine   = color.NRGBA{0x24, 0x30, 0x3b, 0xff} // separators, borders
-	palFg     = color.NRGBA{0xdc, 0xe6, 0xee, 0xff} // primary text
-	palDim    = color.NRGBA{0x7d, 0x8d, 0x9b, 0xff} // secondary text
-	palTeal   = color.NRGBA{0x49, 0xc7, 0xc0, 0xff} // brand / focus / links
-	palAmber  = color.NRGBA{0xf0, 0xc6, 0x74, 0xff} // hub accent / warnings
-	palAlive  = color.NRGBA{0x4c, 0xb9, 0x8a, 0xff} // handshake < 3m
-	palQuiet  = color.NRGBA{0xe6, 0xa5, 0x5f, 0xff} // handshake < 30m
-	palStale  = color.NRGBA{0xdc, 0x48, 0x48, 0xff} // stale / unreachable
-	palAlarm  = color.NRGBA{0xff, 0x5c, 0xd6, 0xff} // UNDECLARED — the alarm
-	palSelect = color.NRGBA{0x1b, 0x3a, 0x3e, 0xff} // selection wash (teal-dark)
+	palBg     = darkPal.bg
+	palPanel  = darkPal.panel
+	palRaised = darkPal.raised
+	palLine   = darkPal.line
+	palFg     = darkPal.fg
+	palDim    = darkPal.dim
+	palTeal   = darkPal.teal
+	palAmber  = darkPal.amber
+	palAlive  = darkPal.alive
+	palQuiet  = darkPal.quiet
+	palStale  = darkPal.stale
+	palAlarm  = darkPal.alarm
+	palSelect = darkPal.sel
 )
+
+func setPalette(v fyne.ThemeVariant) {
+	p := darkPal
+	if v == theme.VariantLight {
+		p = lightPal
+	}
+	palBg, palPanel, palRaised, palLine = p.bg, p.panel, p.raised, p.line
+	palFg, palDim, palTeal, palAmber = p.fg, p.dim, p.teal, p.amber
+	palAlive, palQuiet, palStale, palAlarm, palSelect =
+		p.alive, p.quiet, p.stale, p.alarm, p.sel
+}
 
 func healthColor(h string) color.NRGBA {
 	switch h {
@@ -71,46 +125,56 @@ func healthColor(h string) color.NRGBA {
 // default theme so text metrics stay platform-correct.
 type wgxTheme struct{}
 
-func (wgxTheme) Color(n fyne.ThemeColorName, _ fyne.ThemeVariant) color.Color {
+func (wgxTheme) Color(n fyne.ThemeColorName, v fyne.ThemeVariant) color.Color {
+	p := darkPal
+	// Hover/pressed are OVERLAYS Fyne paints on top of the widget — they
+	// must be translucent (an opaque hover blacked out the teal Refresh
+	// button, seen .119 2026-08-03) and must darken on light backgrounds.
+	hover := color.NRGBA{0xff, 0xff, 0xff, 0x14}
+	pressed := color.NRGBA{0xff, 0xff, 0xff, 0x28}
+	shadow := color.NRGBA{0x00, 0x00, 0x00, 0x66}
+	if v == theme.VariantLight {
+		p = lightPal
+		hover = color.NRGBA{0x00, 0x00, 0x00, 0x10}
+		pressed = color.NRGBA{0x00, 0x00, 0x00, 0x20}
+		shadow = color.NRGBA{0x00, 0x00, 0x00, 0x2a}
+	}
 	switch n {
 	case theme.ColorNameBackground:
-		return palBg
+		return p.bg
 	case theme.ColorNameForeground:
-		return palFg
+		return p.fg
 	case theme.ColorNamePrimary, theme.ColorNameFocus, theme.ColorNameHyperlink:
-		return palTeal
+		return p.teal
 	case theme.ColorNameButton, theme.ColorNameInputBackground:
-		return palPanel
+		return p.panel
 	case theme.ColorNameHover:
-		// Hover/pressed are OVERLAYS Fyne paints on top of the widget —
-		// they must be translucent. An opaque hover here blacked out the
-		// teal Refresh button on mouse-over (seen .119 2026-08-03).
-		return color.NRGBA{0xff, 0xff, 0xff, 0x14}
+		return hover
 	case theme.ColorNamePressed:
-		return color.NRGBA{0xff, 0xff, 0xff, 0x28}
+		return pressed
 	case theme.ColorNameSelection:
-		return palSelect
+		return p.sel
 	case theme.ColorNameSeparator, theme.ColorNameInputBorder:
-		return palLine
+		return p.line
 	case theme.ColorNamePlaceHolder, theme.ColorNameDisabled:
-		return palDim
+		return p.dim
 	case theme.ColorNameScrollBar:
-		return palLine
+		return p.line
 	case theme.ColorNameSuccess:
-		return palAlive
+		return p.alive
 	case theme.ColorNameWarning:
-		return palQuiet
+		return p.quiet
 	case theme.ColorNameError:
-		return palStale
+		return p.stale
 	case theme.ColorNameHeaderBackground, theme.ColorNameMenuBackground,
 		theme.ColorNameOverlayBackground:
-		return palPanel
+		return p.panel
 	case theme.ColorNameForegroundOnPrimary:
-		return palBg
+		return p.bg
 	case theme.ColorNameShadow:
-		return color.NRGBA{0, 0, 0, 0x66}
+		return shadow
 	}
-	return theme.DefaultTheme().Color(n, theme.VariantDark)
+	return theme.DefaultTheme().Color(n, v)
 }
 
 func (wgxTheme) Font(s fyne.TextStyle) fyne.Resource { return theme.DefaultTheme().Font(s) }
@@ -178,6 +242,11 @@ const (
 func RunGUI() error {
 	a := app.NewWithID("ca.wgxplore")
 	a.Settings().SetTheme(wgxTheme{})
+	// The hand-drawn elements (tree cells, cards, chips, verdicts) capture
+	// the pal* globals, so the active palette must match the OS variant
+	// BEFORE any widget is built. Live WM switches are handled by the
+	// settings listener registered below, after reload() exists.
+	setPalette(a.Settings().ThemeVariant())
 	a.SetIcon(theme.ComputerIcon())
 	w := a.NewWindow("wgxplore")
 	w.Resize(fyne.NewSize(1180, 740))
@@ -456,6 +525,27 @@ func RunGUI() error {
 		txt("estate", palTeal, 16, fyne.TextStyle{Bold: true}),
 		txt("select a host, interface or peer", palDim, 13, fyne.TextStyle{Italic: true}),
 	)
+
+	// Follow the WM/OS light-dark preference LIVE: when the variant flips,
+	// swap the active palette and rebuild everything colour-carrying —
+	// widget chrome re-themes itself via wgxTheme.Color(variant).
+	lastVariant := a.Settings().ThemeVariant()
+	a.Settings().AddListener(func(s fyne.Settings) {
+		v := s.ThemeVariant()
+		if v == lastVariant {
+			return
+		}
+		lastVariant = v
+		fyne.Do(func() {
+			setPalette(v)
+			setDossier(
+				txt("estate", palTeal, 16, fyne.TextStyle{Bold: true}),
+				txt("select a host, interface or peer", palDim, 13, fyne.TextStyle{Italic: true}),
+			)
+			reload() // rebuilds chips + cards + tree rows in the new palette
+		})
+	})
+
 	reload()
 	go func() {
 		for range time.Tick(30 * time.Second) {
