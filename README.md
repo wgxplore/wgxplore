@@ -1,8 +1,9 @@
 <div align="center">
 
-<img src="assets/wgxplore.svg" width="96" alt="wgxplore icon"/>
-
-# wgxplore
+<h1>
+  <img src="assets/wgxplore.svg" width="76" align="middle" alt=""/>
+  &nbsp;wgxplore
+</h1>
 
 **The management layer WireGuard never shipped — in the open, not on top.**
 
