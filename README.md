@@ -48,22 +48,26 @@ run. Declare networks in a file, attach anything to them — hosts, VMs,
 machine, every peer, handshake-fresh or stale, declared or **not declared
 by anyone**.
 
-Three ideas, no moving parts:
+It's a **primitives** tool, not a config manager. Every action maps to a
+plain `wg`/`ip` command; nothing is hidden and nothing is invented. Three
+ideas, no moving parts:
 
-1. **The file is the network.** A network is one JSON file: subnet,
-   topology, members. Rendering it produces plain WireGuard configs;
-   applying them is plain `wg`/`ip`, echoed before it runs. No daemon, no
-   server, no agent — what wgxplore leaves behind is stock WireGuard you
-   could have typed yourself.
-2. **The kernel is the map.** The estate view is `wg show` read back over
-   the ssh you already have — local plus every host in your inventory, in
-   parallel. The console can't drift from reality because it *is* a fresh
-   read of reality.
-3. **The diff is the alarm.** Live state is checked against the
-   declarations. A peer on a managed interface that no file lists renders
-   **UNDECLARED** in alarm pink — a WireGuard peer cannot appear by
-   accident; someone with root added that key. `wgx estate | grep
-   UNDECLARED` is a real, cron-able control.
+1. **The kernel is the truth.** The estate view is `wg show all dump` read
+   back — locally and over the ssh you already have, in parallel across
+   every host in your inventory. The console can't drift from reality
+   because it *is* a fresh read of reality, every refresh.
+2. **Every mutation is a command you could have typed.** `net up` prints
+   `ip link add` · `wg setconf` · `ip addr add` · `ip link set up` and then
+   runs exactly that. No daemon, no server, no agent — what wgxplore
+   leaves behind is stock WireGuard, administrable with `wg` alone if you
+   uninstall it tomorrow.
+3. **The declaration exists so reality can be checked.** A network is one
+   small file — subnet, topology, members — not because YAML is the point,
+   but because intent has to live *somewhere* for the console to diff
+   against. A peer on a managed interface that no file lists renders
+   **UNDECLARED** in alarm pink: a WireGuard peer cannot appear by
+   accident, so `wgx estate | grep UNDECLARED` is a real, cron-able
+   control.
 
 Sister project to [zxplore](https://github.com/zxplore/zxplore) (same
 console, one domain over: ZFS) — and when both are present, wgxplore is
