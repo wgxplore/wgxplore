@@ -10,7 +10,7 @@
 *Every device, every peer, every network — declared in a file, enforced by the kernel, visible at a keypress.*
 
 [![License: BSD-3](https://img.shields.io/badge/license-BSD--3--Clause-blue.svg)](LICENSE)
-![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20%2ANIX-brightgreen.svg)
+![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20FreeBSD%20%7C%20OpenBSD%20%7C%20NetBSD-brightgreen.svg)
 ![Built with Go](https://img.shields.io/badge/built%20with-Go-00ADD8.svg)
 ![WireGuard](https://img.shields.io/badge/datapath-kernel%20WireGuard-88171a.svg)
 
@@ -203,10 +203,14 @@ sudo pacman -S --needed go gcc pkgconf libgl libxcursor libxrandr \
 ```
 </details>
 
-Portability: the console and estate view need only `wg` and ssh, so they
-should run on any Unix with WireGuard — **runtime testing to date is Linux**,
-and the container attach is Linux-only by nature (it moves an interface
-between network namespaces). BSD reports welcome.
+Portability: the console and estate view need only `wg` and ssh, and the
+static binary builds for Linux, FreeBSD, OpenBSD and NetBSD (amd64/arm64).
+Two honest limits: **runtime testing to date is Linux** — the BSD binaries
+are cross-compiled and reports are very welcome — and the *mutating* verbs
+(`net up`, `attach`) shell out to `ip`, so on a BSD you get the estate view
+and rendering while bringing interfaces up stays a job for `ifconfig` and
+`wg setconf`. The container attach is Linux-only by nature: it moves an
+interface between network namespaces.
 
 Runtime: a kernel with WireGuard (mainline since 5.6) and `wg` on machines
 you *mutate*; remote estate hosts need only `sshd` + `wg`. Remote hosts
