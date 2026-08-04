@@ -513,6 +513,12 @@ func RunGUI() error {
 		}
 	})
 
+	// ── manual: the embedded wgx(1), full window, "?" or the button ──────
+	// The console ships its own documentation so a static binary on a
+	// stranger's box is never undocumented (zxplore does the same).
+	var showEstate, showManual func()
+	manualBtn := widget.NewButtonWithIcon("Manual", theme.HelpIcon(), func() { showManual() })
+
 	brand := container.NewHBox(
 		txt("wgxplore", palTeal, 20, fyne.TextStyle{Bold: true}),
 		txt(versionFull(), palDim, 12, fyne.TextStyle{Monospace: true}),
@@ -520,13 +526,57 @@ func RunGUI() error {
 		status,
 	)
 	head := container.NewBorder(nil, nil, brand,
-		container.NewHBox(chips, expand, refresh))
+		container.NewHBox(chips, expand, manualBtn, refresh))
 	top := container.NewVBox(container.NewPadded(head), cards, widget.NewSeparator())
 
 	split := container.NewHSplit(tree,
 		container.NewVScroll(container.NewPadded(dossier)))
 	split.Offset = 0.42
-	w.SetContent(container.NewBorder(top, nil, nil, nil, split))
+	estateView := container.NewBorder(top, nil, nil, nil, split)
+
+	manualBody := widget.NewRichText(manualSegments(renderManual())...)
+	manualBody.Wrapping = fyne.TextWrapOff
+	backBtn := widget.NewButtonWithIcon("Back to the estate", theme.NavigateBackIcon(),
+		func() { showEstate() })
+	backBtn.Importance = widget.HighImportance
+	// Front-page header: the mark, the wordmark, the build, and what this
+	// page is — so the manual reads as part of the product, not a text dump.
+	logo := canvas.NewImageFromResource(fyne.NewStaticResource("wgxplore.svg", iconSVG))
+	logo.FillMode = canvas.ImageFillContain
+	logoBox := container.NewGridWrap(fyne.NewSize(52, 52), logo)
+	title := container.NewVBox(
+		container.NewHBox(
+			txt("wgxplore", palTeal, 22, fyne.TextStyle{Bold: true}),
+			txt(versionFull(), palDim, 12, fyne.TextStyle{Monospace: true}),
+		),
+		txt("wgx(1) — the complete manual, shipped inside the binary",
+			palDim, 13, fyne.TextStyle{}),
+	)
+	manualHead := container.NewBorder(nil, nil,
+		container.NewHBox(logoBox, container.NewCenter(title)),
+		container.NewCenter(backBtn))
+	manualView := container.NewBorder(
+		container.NewVBox(container.NewPadded(manualHead), widget.NewSeparator()),
+		container.NewPadded(txt("? opens this page · Esc returns to the estate · "+
+			"the same text is `man wgx` once installed", palDim, 12, fyne.TextStyle{Italic: true})),
+		nil, nil,
+		container.NewVScroll(container.NewPadded(manualBody)))
+
+	showEstate = func() { w.SetContent(estateView) }
+	showManual = func() { w.SetContent(manualView) }
+	showEstate()
+
+	// "?" opens the manual from anywhere; Esc leaves it.
+	w.Canvas().SetOnTypedRune(func(r rune) {
+		if r == '?' {
+			showManual()
+		}
+	})
+	w.Canvas().SetOnTypedKey(func(k *fyne.KeyEvent) {
+		if k.Name == fyne.KeyEscape {
+			showEstate()
+		}
+	})
 
 	setDossier(
 		txt("estate", palTeal, 16, fyne.TextStyle{Bold: true}),
@@ -800,4 +850,25 @@ func ifaceSubnet(d Device) string {
 func firstIP(allowed string) string {
 	f := strings.Split(allowed, ",")[0]
 	return strings.TrimSpace(f)
+}
+
+// manualSegments colours the rendered manual for RichText: section headers in
+// brand teal and bold, body in the foreground colour, everything monospace so
+// the man(1) indentation survives.
+func manualSegments(text string) []widget.RichTextSegment {
+	mono := fyne.TextStyle{Monospace: true}
+	var out []widget.RichTextSegment
+	for _, line := range strings.Split(text, "\n") {
+		st := mono
+		cn := theme.ColorNameForeground
+		if line != "" && manHeadRE.MatchString(strings.TrimRight(line, " ")) {
+			st.Bold = true
+			cn = theme.ColorNamePrimary
+		}
+		out = append(out, &widget.TextSegment{
+			Text:  line + "\n",
+			Style: widget.RichTextStyle{Inline: false, TextStyle: st, ColorName: cn},
+		})
+	}
+	return out
 }
