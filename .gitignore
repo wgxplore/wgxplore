@@ -5,3 +5,4 @@ wgx-tui
 *.log
 /.testtmp/
 /.gotmp/
+/dist/

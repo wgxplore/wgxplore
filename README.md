@@ -172,7 +172,13 @@ sudo make install
 | `wgx` | native GUI (light/dark, follows the WM) + TUI + all verbs | cgo, OpenGL, X11/Wayland |
 | `wgx-tui` | terminal-only, **fully static** | nothing — `scp` it anywhere |
 
-Or `go install github.com/wgxplore/wgxplore@latest` for the static TUI.
+Or straight from source — note the binary lands as `wgxplore`, so rename it
+if you want the short name:
+
+```
+go install github.com/wgxplore/wgxplore@latest   # static TUI
+mv "$(go env GOPATH)/bin/wgxplore" "$(go env GOPATH)/bin/wgx-tui"
+```
 
 <details>
 <summary><b>GUI build dependencies per distro</b></summary>
