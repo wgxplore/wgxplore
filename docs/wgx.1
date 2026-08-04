@@ -1,0 +1,212 @@
+.\" wgx.1 — manual for the wgxplore console. mdoc, OpenBSD section order.
+.\" Keep in lockstep with the --help banner and the verbs in main.go.
+.Dd August 3, 2026
+.Dt WGX 1
+.Os
+.Sh NAME
+.Nm wgx ,
+.Nm wgx-tui
+.Nd the WireGuard networks console: declare, apply, reconcile
+.Sh SYNOPSIS
+.Nm
+.Op Cm tui | Cm estate | Cm show
+.Nm
+.Cm net create Ar name
+.Op Fl -subnet Ar CIDR
+.Op Fl -topology Cm mesh | Cm hub-spoke
+.Op Fl -port Ar n
+.Nm
+.Cm net add Ar name Ar member
+.Op Fl -endpoint Ar host : Ns Ar port
+.Op Fl -hub
+.Nm
+.Cm net render Ar name
+.Nm
+.Cm net up Ar name Ar member
+.Nm
+.Cm attach Ar net Ar container Ar member
+.Sh DESCRIPTION
+.Nm
+is a keyboard-driven console for kernel WireGuard.
+A network is
+.Em declared
+in one JSON file, rendered to plain WireGuard configuration, applied with
+plain
+.Xr wg 8
+and
+.Xr ip 8 ,
+and then read back from the kernel and diffed against the declaration.
+There is no daemon, no server and no agent: what
+.Nm
+leaves behind is stock WireGuard.
+.Pp
+Run with no arguments,
+.Nm
+opens the native GUI, falling back to the terminal console when no display
+is available.
+.Nm wgx-tui
+is the fully static terminal-only build.
+.Ss Views
+.Bl -tag -width "estate"
+.It Cm tui
+Force the terminal console.
+Estate tree on the left, dossier on the right.
+.It Cm estate
+Print the whole estate as a text tree, for scripts, cron and remote checks.
+.It Cm show
+One-shot peer dossiers for the local host.
+.El
+.Ss Verbs
+Every mutating verb prints the literal
+.Xr wg 8 Ns / Ns Xr ip 8
+command before running it.
+.Bl -tag -width "net render"
+.It Cm net create
+Declare a network.
+Writes
+.Pa /etc/wgx/ Ns Ar name Ns Pa .json .
+.It Cm net add
+Add a member, generating its keypair and assigning the next address in the
+subnet.
+.Fl -hub
+marks the reachable rendezvous of a hub-spoke network.
+.It Cm net render
+Compile the declaration into one configuration file per member under
+.Pa /etc/wgx/ Ns Ar name Ns Pa / .
+Topology is nothing but the peer list: in a mesh every member peers with
+every other; in hub-spoke a spoke peers only with the hub, which carries the
+whole subnet.
+The kernel enforces the result through cryptokey routing.
+.It Cm net up
+Bring this host up as
+.Ar member :
+create the interface, apply the configuration, address it, and set it up.
+Requires root.
+.It Cm attach
+Move a WireGuard interface into a running container's network namespace.
+The encrypted socket stays anchored in the namespace where the interface was
+created, so the tunnel keeps working while the interface lives inside the
+container.
+With
+.Ic --network none
+the mesh becomes the container's only network.
+Requires root.
+.El
+.Sh OPTIONS
+.Bl -tag -width "--topology"
+.It Fl -subnet Ar CIDR
+Address range for the network.
+Default
+.Ar 10.44.0.0/24 .
+.It Fl -topology Cm mesh | Cm hub-spoke
+Peer-list policy.
+Default
+.Cm mesh .
+.It Fl -port Ar n
+Listen port for members that listen.
+Default
+.Ar 51820 .
+.It Fl -endpoint Ar host : Ns Ar port
+Where other members dial this one.
+Members without an endpoint roam.
+.It Fl -hub
+This member is the rendezvous; spokes peer only with it.
+.El
+.Sh ENVIRONMENT
+.Bl -tag -width "WGXPLORE_REF" -compact
+.It Ev WGXPLORE_REF
+Used by downstream builds to pin the ingested revision; not read at runtime.
+.El
+.Sh FILES
+.Bl -tag -width "~/.config/wgx/hosts" -compact
+.It Pa /etc/wgx/ Ns Ar name Ns Pa .json
+The declaration for one network.
+The file is the API.
+.It Pa /etc/wgx/ Ns Ar name Ns Pa /
+Rendered per-member configuration, mode 0700.
+.It Pa ~/.config/wgx/hosts
+Explicit estate inventory, one ssh target per line.
+Takes precedence over the ssh configuration.
+.It Pa /etc/wgx/hosts
+System-wide inventory, same format.
+.It Pa ~/.ssh/config
+Fallback inventory.
+Git forges and
+.Ic gh-*
+aliases are skipped.
+.El
+.Sh EXIT STATUS
+.Ex -std
+A non-zero status accompanies a human-readable message on standard error, so
+the verbs compose with
+.Ic &&
+and
+.Ic || .
+.Sh EXAMPLES
+Declare a hub-spoke lab and bring the hub up:
+.Bd -literal -offset indent
+wgx net create lab --subnet 10.99.0.0/24 --topology hub-spoke
+wgx net add lab hub --hub --endpoint hub.example.net:51820
+wgx net add lab ct1
+wgx net render lab
+wgx net up lab hub
+.Ed
+.Pp
+Give a running container exactly one network:
+.Bd -literal -offset indent
+podman run -d --network none --name job image
+wgx attach lab job ct1
+.Ed
+.Pp
+Watch for a peer nobody declared:
+.Bd -literal -offset indent
+wgx estate | grep -q UNDECLARED && notify "rogue WireGuard peer"
+.Ed
+.Sh SEE ALSO
+.Xr zxplore 1 ,
+.Xr ip 8 ,
+.Xr ip-netns 8 ,
+.Xr wg 8 ,
+.Xr wg-quick 8
+.Sh STANDARDS
+Rendered configuration is
+.Xr wg 8
+.Cm setconf
+format and carries no
+.Ic Address=
+line;
+.Nm
+applies addresses with
+.Xr ip 8 ,
+which is what lets one file work before and after a namespace move.
+Any WireGuard implementation can consume it.
+.Sh HISTORY
+.Nm
+first appeared in 2026 as the sister console to
+.Xr zxplore 1 .
+.Sh AUTHORS
+.An Anthony Aq admin@zxplore.dev
+.Sh CAVEATS
+Reading WireGuard state requires
+.Dv CAP_NET_ADMIN .
+.Nm
+escalates the read as gently as it can: directly when root, then
+.Xr sudo 8
+.Fl n ,
+then
+.Xr pkexec 1 .
+.Pp
+Member private keys currently live in the declaration file; treat
+.Pa /etc/wgx
+as a keystore until per-member key custody lands.
+.Pp
+Networks brought up with
+.Cm net up
+do not survive a reboot; render an init unit that runs it, or bring them up
+from your configuration management.
+.Pp
+The estate view works wherever
+.Xr wg 8
+runs, but the container attach is Linux-only: it depends on network
+namespaces.
+Runtime testing to date is Linux.

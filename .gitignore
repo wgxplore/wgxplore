@@ -3,3 +3,5 @@ wgx-gui
 wgx-tui
 .buildnum
 *.log
+/.testtmp/
+/.gotmp/

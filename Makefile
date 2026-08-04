@@ -10,6 +10,9 @@
 PREFIX  ?= /usr/local
 DESTDIR ?=
 BINDIR   = $(DESTDIR)$(PREFIX)/bin
+MANDIR   = $(DESTDIR)$(PREFIX)/share/man/man1
+APPDIR   = $(DESTDIR)$(PREFIX)/share/applications
+ICONDIR  = $(DESTDIR)$(PREFIX)/share/icons/hicolor/scalable/apps
 GO      ?= go
 GOFLAGS ?= -trimpath
 
@@ -31,16 +34,31 @@ wgx: bump $(wildcard *.go) go.mod go.sum
 wgx-tui: bump $(wildcard *.go) go.mod go.sum
 	CGO_ENABLED=0 $(GO) build $(GOFLAGS) $(STAMP) -o wgx-tui .
 
+# WHY the local TMPDIR: `go test` execs the compiled test binary out of
+# TMPDIR, and hardened hosts mount /tmp noexec — which fails as an opaque
+# "fork/exec ...: permission denied" that looks like a broken suite.
+TESTTMP = $(CURDIR)/.testtmp
 test:
+	@mkdir -p $(TESTTMP)
 	$(GO) vet ./...
 	$(GO) vet -tags gui ./...
+	TMPDIR=$(TESTTMP) $(GO) test -count=1 ./...
+	TMPDIR=$(TESTTMP) $(GO) test -count=1 -tags gui ./...
 
 install: build
-	install -d $(BINDIR)
+	install -d $(BINDIR) $(MANDIR) $(APPDIR) $(ICONDIR)
 	install -m 0755 wgx     $(BINDIR)/wgx
 	install -m 0755 wgx-tui $(BINDIR)/wgx-tui
+	install -m 0644 docs/wgx.1              $(MANDIR)/wgx.1
+	install -m 0644 assets/wgxplore.svg     $(ICONDIR)/wgxplore.svg
+	install -m 0644 contrib/wgxplore.desktop $(APPDIR)/wgxplore.desktop
+	# polkit: prompt-free READ-ONLY estate refreshes for console users
+	@if [ -d $(DESTDIR)/usr/share/polkit-1/actions ]; then \
+	  install -m 0644 contrib/org.wgxplore.policy $(DESTDIR)/usr/share/polkit-1/actions/; \
+	fi
 
 clean:
 	rm -f wgx wgx-tui
+	rm -rf $(TESTTMP)
 
 .PHONY: bump build test install clean
