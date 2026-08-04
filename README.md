@@ -152,15 +152,44 @@ Roadmap (only what sharpens the core): per-member key custody · fleet-grade
 verbs (deterministic allocation, idempotent `net add`, `--json`) ·
 `net adopt` · key rotation · audit log · joined networks.
 
-## wgxplore on kldload
+## On kldload — and how to get the same anywhere
 
-[kldload](https://kldload.com) is the first-party distribution — the
-substrate installer bakes wgxplore into every profile: static console on
-every install, GUI + desktop tile where there's a screen, a polkit rule
-for prompt-free read-only refreshes, the ingested commit recorded in
-`/etc/kldload/wgxplore-commit`, and air-gapped builds from a source cache.
-A consumer, not a dependency: wgxplore runs on any Linux with kernel
-WireGuard.
+[kldload](https://kldload.com) is a kernel-loaded deployment: an installer
+that puts ZFS on root across eight Linux distributions and, when you ask for
+a cluster, brings the nodes up on a declared WireGuard backplane. wgxplore is
+how you see that backplane, so it ships in every profile. On a fresh kldload
+box these things are already **true**, not merely installed:
+
+- The Kubernetes node mesh is encrypted WireGuard — two planes, one for the
+  data path the CNI rides and one for management (SSH, kubelet↔API, etcd).
+- The declarations and the estate inventory were written during bootstrap, so
+  the first `wgx` you run already shows every node, interface and peer.
+- A polkit rule is in place, so the console reads state without prompting on
+  every refresh; the ingested commit is recorded in
+  `/etc/kldload/wgxplore-commit`, and air-gapped builds ship it from cache.
+
+Why it composes: on that substrate a VM disk and a container volume are ZFS
+datasets, so a workload is a dataset plus an overlay address — replicate the
+dataset over the mesh with [zxplore](https://github.com/zxplore/zxplore),
+`wgx attach` it on the far side, and it comes up at the same address with its
+data. Neither console is required for the other; together they are the road
+and the payload.
+
+**None of this is kldload-specific.** wgxplore is a static binary that talks
+to your kernel and your ssh — nothing about it knows or cares which distro it
+is on. To get the same on any Linux:
+
+```
+dnf install wireguard-tools     # or apt/pacman/apk
+wgx net create mesh --subnet 10.44.0.0/24 --topology hub-spoke
+wgx net add mesh hub --hub --endpoint hub.example.net:51820
+wgx net add mesh node1
+wgx net render mesh && wgx net up mesh hub
+printf 'root@10.0.0.11\nroot@10.0.0.12\n' > ~/.config/wgx/hosts   # the estate
+```
+
+Point it at hosts that already run WireGuard and it maps those too, declared
+by you or not. The kldload integration is a head start, not a dependency.
 
 ## Install
 
