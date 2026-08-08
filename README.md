@@ -14,7 +14,7 @@
 ![Built with Go](https://img.shields.io/badge/built%20with-Go-00ADD8.svg)
 ![WireGuard](https://img.shields.io/badge/datapath-kernel%20WireGuard-88171a.svg)
 
-**The family:** [kldload](https://github.com/kldload/kldload) — the substrate &middot; [zxplore](https://github.com/zxplore/zxplore) — the ZFS console &middot; **wgxplore** — the WireGuard console
+**The family:** [kldload](https://github.com/kldload/kldload) — the substrate &middot; [zxplore](https://github.com/zxplore/zxplore) — the ZFS console &middot; **wgxplore** — the WireGuard console &middot; [vmxplore](https://github.com/vmxplore/vmxplore) — the VM console
 
 <img src="docs/screenshots/console-annotated.png" width="880" alt="wgxplore console, annotated — a live estate: the k8s node mesh on two encrypted planes, template VMs without WireGuard shown honestly, one VM mid-provision down, and a peer dossier with its verdict"/>
 
